@@ -1,0 +1,12 @@
+# build output
+units/
+*.o
+*.ppu
+tiecook
+
+# editor/tooling
+.claude/
+
+# misc
+shawn
+

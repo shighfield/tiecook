@@ -1,0 +1,7 @@
+# tiecook config
+# Copy this file to ~/.config/tiecook/config (or $XDG_CONFIG_HOME/tiecook/config)
+# and fill in your own values. Generate the token in the Tandoor web UI under
+# Settings > API > + NEW, scope "read".
+
+base_url=https://recipes.example.com:8443
+token=tda_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
