@@ -7,6 +7,11 @@ steps. No editing, meal planning, or shopping list actions.
 Built on FPC's Free Vision (Turbo Vision) toolkit, so it runs natively on
 both Linux and Windows from the same source.
 
+Windows users who don't want to build from source can grab the installer
+from the [latest release](https://github.com/shighfield/tiecook/releases/latest)
+instead — see [Building a Windows installer](#building-a-windows-installer)
+below for what it does.
+
 ## Build
 
 ```
@@ -42,6 +47,12 @@ other two, not a Windows system DLL, and must ship alongside them too.
 Copy all four files together to the Windows machine.
 
 ### Building a Windows installer
+
+Prebuilt: grab `tiecook-setup.exe` from the
+[latest release](https://github.com/shighfield/tiecook/releases/latest)
+instead of building it yourself.
+
+To build it from source:
 
 ```
 make installer
