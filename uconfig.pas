@@ -20,12 +20,16 @@ uses
 
 function GetConfigPath: string;
 var
-  XdgConfigHome: string;
+  ConfigHome: string;
 begin
-  XdgConfigHome := GetEnvironmentVariable('XDG_CONFIG_HOME');
-  if XdgConfigHome = '' then
-    XdgConfigHome := IncludeTrailingPathDelimiter(GetEnvironmentVariable('HOME')) + '.config';
-  Result := IncludeTrailingPathDelimiter(IncludeTrailingPathDelimiter(XdgConfigHome) + 'tiecook') + 'config';
+  {$IFDEF WINDOWS}
+  ConfigHome := GetEnvironmentVariable('APPDATA');
+  {$ELSE}
+  ConfigHome := GetEnvironmentVariable('XDG_CONFIG_HOME');
+  if ConfigHome = '' then
+    ConfigHome := IncludeTrailingPathDelimiter(GetEnvironmentVariable('HOME')) + '.config';
+  {$ENDIF}
+  Result := IncludeTrailingPathDelimiter(IncludeTrailingPathDelimiter(ConfigHome) + 'tiecook') + 'config';
 end;
 
 const

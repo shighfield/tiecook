@@ -1,8 +1,11 @@
 # build output
 units/
+units-win64/
 *.o
 *.ppu
 tiecook
+tiecook.exe
+*.dll
 
 # editor/tooling
 .claude/

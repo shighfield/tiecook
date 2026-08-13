@@ -3,7 +3,7 @@ program tiecook;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, uconfig, uapi, utui;
+  SysUtils, uconfig, uapi, ufv;
 
 var
   Cfg: TTiecookConfig;
