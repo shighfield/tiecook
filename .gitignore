@@ -5,6 +5,7 @@ units-win64/
 *.ppu
 tiecook
 tiecook.exe
+tiecook-setup.exe
 *.dll
 
 # editor/tooling

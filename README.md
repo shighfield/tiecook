@@ -41,6 +41,20 @@ the `-1.1` package. `libssp-0.dll` is a MinGW runtime dependency of the
 other two, not a Windows system DLL, and must ship alongside them too.
 Copy all four files together to the Windows machine.
 
+### Building a Windows installer
+
+```
+make installer
+```
+
+Requires `nsis` (AUR) in addition to the Windows cross-compile
+prerequisites above. Produces `tiecook-setup.exe`, a per-user installer
+(no admin rights needed) that installs to `%LOCALAPPDATA%\Programs\tiecook`,
+seeds `%APPDATA%\tiecook\config` from `config.example` on first install
+(without overwriting an existing config on upgrade), and adds a
+`tiecook` Start Menu folder with shortcuts to launch the app, open the
+config file directly in Notepad for editing, and uninstall.
+
 ## Configure
 
 Copy `config.example` to `~/.config/tiecook/config` (or
@@ -65,8 +79,9 @@ uconfig.pas    -- config file loading (base URL + token)
 umodels.pas    -- plain data records: TRecipeOverview, TRecipeDetail, TStep, TIngredient
 uapi.pas       -- TTandoorClient: HTTP + JSON client for the Tandoor REST API
 ufv.pas        -- Free Vision TUI: search/list screen, detail window, event handling
-Makefile       -- build (native and Windows cross-compile)
+Makefile       -- build (native, Windows cross-compile, Windows installer)
 config.example -- template for ~/.config/tiecook/config
+installer.nsi  -- NSIS script for the Windows installer
 ```
 
 ## Run
