@@ -20,14 +20,18 @@ type
     FToken: string;
     FHttp: TFPHTTPClient;
     function DoGet(const APath: string): TJSONData;
+    function ParseKeywords(Arr: TJSONArray): TKeywordArray;
     function ParseOverview(Obj: TJSONObject): TRecipeOverview;
     function ParseIngredient(Obj: TJSONObject): TIngredient;
     function ParseStep(Obj: TJSONObject): TStep;
   public
     constructor Create(const ABaseUrl, AToken: string);
     destructor Destroy; override;
-    function SearchRecipes(const AQuery: string; APage: Integer): TSearchResult;
+    function SearchRecipes(const P: TSearchParams): TSearchResult;
     function GetRecipeDetail(AId: Integer): TRecipeDetail;
+    function GetRandomRecipe: TRecipeOverview;
+    function ListKeywords: TKeywordArray;
+    property BaseUrl: string read FBaseUrl;
   end;
 
 implementation
@@ -101,11 +105,29 @@ begin
   end;
 end;
 
-function TTandoorClient.ParseOverview(Obj: TJSONObject): TRecipeOverview;
+function TTandoorClient.ParseKeywords(Arr: TJSONArray): TKeywordArray;
 var
-  KwArr: TJSONArray;
   I: Integer;
   KwObj: TJSONObject;
+begin
+  Result := nil;
+  if not Assigned(Arr) then
+    Exit;
+  SetLength(Result, Arr.Count);
+  for I := 0 to Arr.Count - 1 do
+  begin
+    KwObj := TJSONObject(Arr.Items[I]);
+    Result[I].Id := KwObj.Get('id', 0);
+    { The recipe-list serializer returns keywords with id + label and no
+      name field; the detail serializer returns both. label is present in
+      both, so fall back to it. }
+    Result[I].Name := KwObj.Get('name', '');
+    if Result[I].Name = '' then
+      Result[I].Name := KwObj.Get('label', '');
+  end;
+end;
+
+function TTandoorClient.ParseOverview(Obj: TJSONObject): TRecipeOverview;
 begin
   Result.Id := Obj.Get('id', 0);
   Result.Name := Obj.Get('name', '');
@@ -116,18 +138,7 @@ begin
   Result.Servings := Obj.Get('servings', 0);
   Result.ServingsText := Obj.Get('servings_text', '');
   Result.Rating := Obj.Get('rating', Double(0));
-
-  SetLength(Result.Keywords, 0);
-  KwArr := Obj.Get('keywords', TJSONArray(nil));
-  if Assigned(KwArr) then
-  begin
-    SetLength(Result.Keywords, KwArr.Count);
-    for I := 0 to KwArr.Count - 1 do
-    begin
-      KwObj := TJSONObject(KwArr.Items[I]);
-      Result.Keywords[I].Name := KwObj.Get('name', '');
-    end;
-  end;
+  Result.Keywords := ParseKeywords(Obj.Get('keywords', TJSONArray(nil)));
 end;
 
 function TTandoorClient.ParseIngredient(Obj: TJSONObject): TIngredient;
@@ -172,14 +183,25 @@ begin
   end;
 end;
 
-function TTandoorClient.SearchRecipes(const AQuery: string; APage: Integer): TSearchResult;
+function TTandoorClient.SearchRecipes(const P: TSearchParams): TSearchResult;
 var
   Data: TJSONData;
   Obj: TJSONObject;
   ResultsArr: TJSONArray;
   I: Integer;
+  Path: string;
 begin
-  Data := DoGet('/api/recipe/?query=' + EncodeURLElement(AQuery) + '&page=' + IntToStr(APage));
+  Path := '/api/recipe/?query=' + EncodeURLElement(P.Query) + '&page=' + IntToStr(P.Page);
+  { sort_order and random both control ordering; a filtered search never sets
+    random, so they can't collide here. keywords is a repeat parameter, so a
+    second keyword would be another &keywords=<id> rather than a comma list. }
+  if P.SortOrder <> '' then
+    Path := Path + '&sort_order=' + EncodeURLElement(P.SortOrder);
+  if P.RatingGte > 0 then
+    Path := Path + '&rating_gte=' + IntToStr(P.RatingGte);
+  if P.KeywordId > 0 then
+    Path := Path + '&keywords=' + IntToStr(P.KeywordId);
+  Data := DoGet(Path);
   try
     Obj := TJSONObject(Data);
     Result.Count := Obj.Get('count', 0);
@@ -218,6 +240,7 @@ begin
     Result.ServingsText := Obj.Get('servings_text', '');
     Result.SourceUrl := Obj.Get('source_url', '');
     Result.Rating := Obj.Get('rating', Double(0));
+    Result.Keywords := ParseKeywords(Obj.Get('keywords', TJSONArray(nil)));
 
     SetLength(Result.Steps, 0);
     StepsArr := Obj.Get('steps', TJSONArray(nil));
@@ -229,6 +252,56 @@ begin
     end;
   finally
     Data.Free;
+  end;
+end;
+
+function TTandoorClient.GetRandomRecipe: TRecipeOverview;
+var
+  Data: TJSONData;
+  Obj: TJSONObject;
+  ResultsArr: TJSONArray;
+begin
+  Data := DoGet('/api/recipe/?random=true&page=1');
+  try
+    Obj := TJSONObject(Data);
+    ResultsArr := Obj.Get('results', TJSONArray(nil));
+    if (not Assigned(ResultsArr)) or (ResultsArr.Count = 0) then
+      raise ETandoorError.CreateHttp(0, 'No recipes available.');
+    Result := ParseOverview(TJSONObject(ResultsArr.Items[0]));
+  finally
+    Data.Free;
+  end;
+end;
+
+function TTandoorClient.ListKeywords: TKeywordArray;
+var
+  Data: TJSONData;
+  Obj: TJSONObject;
+  I, J: Integer;
+  Tmp: TKeyword;
+begin
+  Result := nil;
+  { page_size well above the current keyword count so the whole set arrives in
+    one page. }
+  Data := DoGet('/api/keyword/?page_size=1000');
+  try
+    Obj := TJSONObject(Data);
+    Result := ParseKeywords(Obj.Get('results', TJSONArray(nil)));
+  finally
+    Data.Free;
+  end;
+
+  { Insertion sort by name (case-insensitive) for a predictable picker. }
+  for I := 1 to High(Result) do
+  begin
+    Tmp := Result[I];
+    J := I - 1;
+    while (J >= 0) and (CompareText(Result[J].Name, Tmp.Name) > 0) do
+    begin
+      Result[J + 1] := Result[J];
+      Dec(J);
+    end;
+    Result[J + 1] := Tmp;
   end;
 end;
 

@@ -105,6 +105,8 @@ Keybindings:
 - Search box: type to edit, `Enter` to search.
 - `Tab`/`Shift-Tab`: switch focus between the search box and the result list.
 - List: `Up`/`Down` select, `Enter` (or `Space`) opens the selected recipe,
-  `N`/`P` next or previous page of results.
-- Detail window: `Up`/`Down` scroll, `Esc` closes back to the list.
+  `N`/`P` next or previous page of results, `R` open a random recipe,
+  `F` set sort order / minimum rating, `K` filter by keyword.
+- Detail window: `Up`/`Down` scroll, `O` open the recipe in your web browser,
+  `Esc` closes back to the list. Keywords appear under the recipe header.
 - `Alt-X`: quit.

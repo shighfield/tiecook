@@ -6,6 +6,7 @@ interface
 
 type
   TKeyword = record
+    Id: Integer;
     Name: string;
   end;
   TKeywordArray = array of TKeyword;
@@ -47,6 +48,7 @@ type
     Id: Integer;
     Name: string;
     Description: string;
+    Keywords: TKeywordArray;
     Steps: TStepArray;
     WorkingTime: Integer;
     WaitingTime: Integer;
@@ -61,6 +63,18 @@ type
     HasNext: Boolean;
     HasPrevious: Boolean;
     Recipes: TRecipeOverviewArray;
+  end;
+
+  { Parameters for a recipe search. Empty SortOrder / zero RatingGte / zero
+    KeywordId each mean "no filter". SortOrder is one of the Tandoor
+    sort_order values (e.g. 'name', '-rating'); RatingGte maps to rating_gte;
+    KeywordId maps to a single keywords=<id>. }
+  TSearchParams = record
+    Query: string;
+    Page: Integer;
+    SortOrder: string;
+    RatingGte: Integer;
+    KeywordId: Integer;
   end;
 
 implementation

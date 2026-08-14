@@ -6,11 +6,11 @@ WIN_DLLS=libssl-1_1-x64.dll libcrypto-1_1-x64.dll libssp-0.dll
 
 .PHONY: clean windows installer
 
-tiecook: tiecook.pas uconfig.pas uapi.pas umodels.pas ufv.pas
+tiecook: tiecook.pas uconfig.pas uapi.pas umodels.pas ufv.pas uopen.pas
 	mkdir -p units
 	$(FPC) $(FLAGS) tiecook.pas
 
-windows: tiecook.pas uconfig.pas uapi.pas umodels.pas ufv.pas
+windows: tiecook.pas uconfig.pas uapi.pas umodels.pas ufv.pas uopen.pas
 	mkdir -p units-win64
 	$(FPC) $(FLAGS) -Twin64 -FUunits-win64 tiecook.pas -otiecook.exe
 	for dll in $(WIN_DLLS); do cp $(MINGW_SYSROOT)/$$dll .; done

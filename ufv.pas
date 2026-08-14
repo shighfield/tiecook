@@ -10,7 +10,8 @@ procedure RunTUI(Client: TTandoorClient);
 implementation
 
 uses
-  SysUtils, Objects, Drivers, Views, Dialogs, Editors, Menus, App, FVConsts, umodels;
+  SysUtils, Objects, Drivers, Views, Dialogs, Editors, Menus, App, FVConsts,
+  umodels, uopen;
 
 const
   cmDoSearch = 100;
@@ -28,7 +29,9 @@ type
 
   PDetailWindow = ^TDetailWindow;
   TDetailWindow = object(TDialog)
-    constructor Init(const ATitle, ABody: string);
+    Url: PString;
+    constructor Init(const ATitle, ABody, AUrl: string);
+    destructor Done; virtual;
     procedure HandleEvent(var Event: TEvent); virtual;
   end;
 
@@ -42,6 +45,10 @@ type
     LastQuery: string;
     Page: Integer;
     HasNext, HasPrevious: Boolean;
+    CurSortOrder: string;
+    CurRatingGte: Integer;
+    CurKeywordId: Integer;
+    CurKeywordName: string;
     constructor Init(AClient: TTandoorClient);
     function GetPalette: PPalette; virtual;
     procedure InitMenuBar; virtual;
@@ -50,6 +57,10 @@ type
     procedure SetMessage(const S: string);
     procedure DoSearch(const Query: string; APage: Integer);
     procedure OpenRecipe(Index: Integer);
+    procedure OpenRecipeDetail(AId: Integer);
+    procedure DoRandom;
+    procedure DoFilterDialog;
+    procedure DoKeywordDialog;
   end;
 
 function BuildDetailText(const D: TRecipeDetail): string;
@@ -57,7 +68,7 @@ var
   I, J: Integer;
   Ing: TIngredient;
   Step: TStep;
-  ServingsDisp, AmountStr: string;
+  ServingsDisp, AmountStr, KwLine: string;
 begin
   Result := D.Name + #13#13;
 
@@ -70,6 +81,18 @@ begin
     ServingsDisp := IntToStr(D.Servings);
   Result := Result + Format('Servings: %s   Prep: %d min   Cook: %d min   Rating: %.1f',
     [ServingsDisp, D.WaitingTime, D.WorkingTime, D.Rating]) + #13#13;
+
+  if Length(D.Keywords) > 0 then
+  begin
+    KwLine := '';
+    for I := 0 to High(D.Keywords) do
+    begin
+      if I > 0 then
+        KwLine := KwLine + ', ';
+      KwLine := KwLine + D.Keywords[I].Name;
+    end;
+    Result := Result + 'Keywords: ' + KwLine + #13#13;
+  end;
 
   Result := Result + 'Ingredients:' + #13;
   for I := 0 to High(D.Steps) do
@@ -150,7 +173,7 @@ end;
 
 { TDetailWindow }
 
-constructor TDetailWindow.Init(const ATitle, ABody: string);
+constructor TDetailWindow.Init(const ATitle, ABody, AUrl: string);
 var
   R, Inner, VR, MR: TRect;
   Memo: PMemo;
@@ -159,6 +182,8 @@ begin
   Application^.GetExtent(R);
   R.Grow(-2, -1);
   inherited Init(R, ATitle);
+
+  Url := NewStr(AUrl);
 
   GetExtent(Inner);
   Inner.Grow(-1, -1);
@@ -171,18 +196,35 @@ begin
   Memo := New(PMemo, Init(MR, nil, VSB, nil, Length(ABody) + 1));
   Memo^.IsReadOnly := True;
   Memo^.Word_Wrap := True;
-  Memo^.InsertText(@ABody[1], Length(ABody), False);
+  if Length(ABody) > 0 then
+    Memo^.InsertText(@ABody[1], Length(ABody), False);
   Memo^.SetCurPtr(0, 0);
   Insert(Memo);
 end;
 
+destructor TDetailWindow.Done;
+begin
+  DisposeStr(Url);
+  inherited Done;
+end;
+
 procedure TDetailWindow.HandleEvent(var Event: TEvent);
 begin
-  if (Event.What = evKeyDown) and (Event.KeyCode = kbEsc) then
+  if Event.What = evKeyDown then
   begin
-    ClearEvent(Event);
-    Close;
-    Exit;
+    if Event.KeyCode = kbEsc then
+    begin
+      ClearEvent(Event);
+      Close;
+      Exit;
+    end;
+    if UpCase(Event.CharCode) = 'O' then
+    begin
+      if (Url <> nil) and (Url^ <> '') then
+        OpenUrl(Url^);
+      ClearEvent(Event);
+      Exit;
+    end;
   end;
   inherited HandleEvent(Event);
 end;
@@ -218,6 +260,10 @@ begin
   Page := 1;
   HasNext := False;
   HasPrevious := False;
+  CurSortOrder := '';
+  CurRatingGte := 0;
+  CurKeywordId := 0;
+  CurKeywordName := '';
 
   GetExtent(R);
   R.Assign(0, 0, 9, 1);
@@ -254,11 +300,14 @@ begin
   R.A.Y := R.B.Y - 1;
   New(StatusLine, Init(R,
     NewStatusDef(0, $FFFF,
-      NewStatusKey('~Enter~ Search/Open', kbNoKey, cmValid,
-      NewStatusKey('~N~ Next page', kbNoKey, cmValid,
-      NewStatusKey('~P~ Prev page', kbNoKey, cmValid,
+      NewStatusKey('~Enter~ Open', kbNoKey, cmValid,
+      NewStatusKey('~N~/~P~ Page', kbNoKey, cmValid,
+      NewStatusKey('~R~ Random', kbNoKey, cmValid,
+      NewStatusKey('~F~ Filter', kbNoKey, cmValid,
+      NewStatusKey('~K~ Keyword', kbNoKey, cmValid,
+      NewStatusKey('~O~ Browser', kbNoKey, cmValid,
       NewStatusKey('~Alt-X~ Exit', kbAltX, cmQuit,
-      nil)))), nil)));
+      nil))))))), nil)));
 end;
 
 procedure TTiecookApp.SetMessage(const S: string);
@@ -273,12 +322,18 @@ end;
 procedure TTiecookApp.DoSearch(const Query: string; APage: Integer);
 var
   Res: TSearchResult;
+  P: TSearchParams;
   List: PStrCollection;
   I: Integer;
-  Line: string;
+  Line, FilterInfo: string;
 begin
+  P.Query := Query;
+  P.Page := APage;
+  P.SortOrder := CurSortOrder;
+  P.RatingGte := CurRatingGte;
+  P.KeywordId := CurKeywordId;
   try
-    Res := Client.SearchRecipes(Query, APage);
+    Res := Client.SearchRecipes(P);
   except
     on E: ETandoorError do
     begin
@@ -307,21 +362,27 @@ begin
   end;
   ListBox^.NewList(List);
 
+  FilterInfo := '';
+  if CurKeywordId > 0 then
+    FilterInfo := FilterInfo + '  kw:' + CurKeywordName;
+  if CurRatingGte > 0 then
+    FilterInfo := FilterInfo + Format('  rating>=%d', [CurRatingGte]);
+  if CurSortOrder <> '' then
+    FilterInfo := FilterInfo + '  sort:' + CurSortOrder;
+
   if Res.Count > 0 then
-    SetMessage(Format('Page %d - %d recipe(s) found', [APage, Res.Count]))
+    SetMessage(Format('Page %d - %d recipe(s) found', [APage, Res.Count]) + FilterInfo)
   else
-    SetMessage(Format('No recipes found for ''%s''.', [Query]));
+    SetMessage(Format('No recipes found for ''%s''.', [Query]) + FilterInfo);
 end;
 
-procedure TTiecookApp.OpenRecipe(Index: Integer);
+procedure TTiecookApp.OpenRecipeDetail(AId: Integer);
 var
   Detail: TRecipeDetail;
   Win: PDetailWindow;
 begin
-  if (Index < 0) or (Index > High(Results)) then
-    Exit;
   try
-    Detail := Client.GetRecipeDetail(Results[Index].Id);
+    Detail := Client.GetRecipeDetail(AId);
   except
     on E: ETandoorError do
     begin
@@ -329,8 +390,191 @@ begin
       Exit;
     end;
   end;
-  Win := New(PDetailWindow, Init(Detail.Name, BuildDetailText(Detail)));
+  Win := New(PDetailWindow, Init(Detail.Name, BuildDetailText(Detail),
+    Client.BaseUrl + '/view/recipe/' + IntToStr(Detail.Id)));
   Insert(Win);
+end;
+
+procedure TTiecookApp.OpenRecipe(Index: Integer);
+begin
+  if (Index < 0) or (Index > High(Results)) then
+    Exit;
+  OpenRecipeDetail(Results[Index].Id);
+end;
+
+procedure TTiecookApp.DoRandom;
+var
+  Ov: TRecipeOverview;
+begin
+  try
+    Ov := Client.GetRandomRecipe;
+  except
+    on E: ETandoorError do
+    begin
+      SetMessage('Error: ' + E.Message);
+      Exit;
+    end;
+  end;
+  SetMessage('Random pick: ' + Ov.Name);
+  OpenRecipeDetail(Ov.Id);
+end;
+
+procedure TTiecookApp.DoFilterDialog;
+const
+  SortLabels: array[0..4] of string =
+    ('Best match', 'Name A-Z', 'Name Z-A', 'Highest rated', 'Lowest rated');
+  SortValues: array[0..4] of string =
+    ('', 'name', '-name', '-rating', 'rating');
+  RatingLabels: array[0..5] of string =
+    ('Any', '1 or more', '2 or more', '3 or more', '4 or more', '5 only');
+var
+  D: PDialog;
+  R: TRect;
+  SortRB, RatingRB: PRadioButtons;
+  SortItems, RatingItems: PSItem;
+  I, C, Sel, CX, CY: Integer;
+begin
+  { NewSItem prepends, so build the chains from the last label back to index 0. }
+  SortItems := nil;
+  for I := High(SortLabels) downto 0 do
+    SortItems := NewSItem(SortLabels[I], SortItems);
+  RatingItems := nil;
+  for I := High(RatingLabels) downto 0 do
+    RatingItems := NewSItem(RatingLabels[I], RatingItems);
+
+  Application^.GetExtent(R);
+  CX := (R.B.X - 48) div 2;
+  CY := (R.B.Y - 12) div 2;
+  if CX < 0 then CX := 0;
+  if CY < 0 then CY := 0;
+  R.Assign(CX, CY, CX + 48, CY + 12);
+  D := New(PDialog, Init(R, 'Search Filters'));
+
+  R.Assign(3, 2, 22, 3);
+  D^.Insert(New(PStaticText, Init(R, 'Sort by')));
+  R.Assign(3, 3, 23, 8);
+  SortRB := New(PRadioButtons, Init(R, SortItems));
+  D^.Insert(SortRB);
+
+  R.Assign(25, 2, 45, 3);
+  D^.Insert(New(PStaticText, Init(R, 'Minimum rating')));
+  R.Assign(25, 3, 45, 9);
+  RatingRB := New(PRadioButtons, Init(R, RatingItems));
+  D^.Insert(RatingRB);
+
+  R.Assign(9, 9, 21, 11);
+  D^.Insert(New(PButton, Init(R, 'O~K~', cmOK, bfDefault)));
+  R.Assign(25, 9, 37, 11);
+  D^.Insert(New(PButton, Init(R, 'Cancel', cmCancel, bfNormal)));
+
+  { Preselect the current filter state by setting each cluster's Value. }
+  Sel := 0;
+  for I := 0 to High(SortValues) do
+    if SortValues[I] = CurSortOrder then
+    begin
+      Sel := I;
+      Break;
+    end;
+  SortRB^.Value := Sel;
+  if (CurRatingGte >= 0) and (CurRatingGte <= High(RatingLabels)) then
+    RatingRB^.Value := CurRatingGte
+  else
+    RatingRB^.Value := 0;
+
+  SortRB^.Select;
+  C := ExecView(D);
+  if C = cmOK then
+  begin
+    { Read selections straight off the controls (they live until Dispose). }
+    I := SortRB^.Value;
+    if (I >= 0) and (I <= High(SortValues)) then
+      CurSortOrder := SortValues[I];
+    CurRatingGte := RatingRB^.Value;
+    Dispose(D, Done);
+    DoSearch(LastQuery, 1);
+    Exit;
+  end;
+  Dispose(D, Done);
+end;
+
+procedure TTiecookApp.DoKeywordDialog;
+var
+  Keywords: TKeywordArray;
+  D: PDialog;
+  R: TRect;
+  LB: PListBox;
+  SB: PScrollBar;
+  Coll: PStrCollection;
+  I, C, CX, CY: Integer;
+const
+  W = 42;
+  H = 20;
+begin
+  try
+    Keywords := Client.ListKeywords;
+  except
+    on E: ETandoorError do
+    begin
+      SetMessage('Error: ' + E.Message);
+      Exit;
+    end;
+  end;
+
+  Application^.GetExtent(R);
+  CX := (R.B.X - W) div 2;
+  CY := (R.B.Y - H) div 2;
+  if CX < 0 then CX := 0;
+  if CY < 0 then CY := 0;
+  R.Assign(CX, CY, CX + W, CY + H);
+  D := New(PDialog, Init(R, 'Filter by Keyword'));
+
+  R.Assign(W - 4, 2, W - 3, H - 4);
+  SB := New(PScrollBar, Init(R));
+  D^.Insert(SB);
+  R.Assign(3, 2, W - 4, H - 4);
+  LB := New(PListBox, Init(R, 1, SB));
+  D^.Insert(LB);
+
+  { Index 0 is the "clear filter" row; keyword i sits at row i+1. }
+  Coll := New(PStrCollection, Init(Length(Keywords) + 1, 8));
+  Coll^.AtInsert(0, NewStr('(no keyword filter)'));
+  for I := 0 to High(Keywords) do
+    Coll^.AtInsert(I + 1, NewStr(Keywords[I].Name));
+  LB^.NewList(Coll);
+
+  if CurKeywordId > 0 then
+    for I := 0 to High(Keywords) do
+      if Keywords[I].Id = CurKeywordId then
+      begin
+        LB^.FocusItem(I + 1);
+        Break;
+      end;
+
+  R.Assign(6, H - 3, 18, H - 1);
+  D^.Insert(New(PButton, Init(R, 'O~K~', cmOK, bfDefault)));
+  R.Assign(22, H - 3, 34, H - 1);
+  D^.Insert(New(PButton, Init(R, 'Cancel', cmCancel, bfNormal)));
+
+  LB^.Select;
+  C := ExecView(D);
+  if C = cmOK then
+  begin
+    I := LB^.Focused;
+    if I <= 0 then
+    begin
+      CurKeywordId := 0;
+      CurKeywordName := '';
+    end
+    else
+    begin
+      CurKeywordId := Keywords[I - 1].Id;
+      CurKeywordName := Keywords[I - 1].Name;
+    end;
+    Dispose(D, Done);
+    DoSearch(LastQuery, 1);
+    Exit;
+  end;
+  Dispose(D, Done);
 end;
 
 procedure TTiecookApp.HandleEvent(var Event: TEvent);
@@ -377,6 +621,21 @@ begin
               DoSearch(LastQuery, Page - 1);
               ClearEvent(Event);
             end;
+          'R':
+            begin
+              DoRandom;
+              ClearEvent(Event);
+            end;
+          'F':
+            begin
+              DoFilterDialog;
+              ClearEvent(Event);
+            end;
+          'K':
+            begin
+              DoKeywordDialog;
+              ClearEvent(Event);
+            end;
         end;
       end;
   end;
@@ -389,6 +648,13 @@ begin
   MyApp.Init(Client);
   MyApp.Run;
   MyApp.Done;
+  {$IFDEF UNIX}
+  { Free Vision's Linux teardown homes the cursor but leaves the TUI frame on
+    screen, so the shell prompt is buried until the user clears it manually.
+    Reset attributes, clear the screen, home the cursor and make it visible. }
+  Write(#27'[0m'#27'[2J'#27'[H'#27'[?25h');
+  Flush(Output);
+  {$ENDIF}
 end;
 
 end.
