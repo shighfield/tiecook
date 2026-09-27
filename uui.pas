@@ -1,0 +1,420 @@
+unit uui;
+
+{ The read-only terminal browser: a list screen with live search and a
+  scrollable detail screen, on FPC's video/keyboard/mouse units. Keyboard
+  plus mouse (click to select/open, wheel to scroll). Non-ASCII text is
+  transliterated for display (see urender/uutf8); files on disk keep UTF-8. }
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  ulibrary, uconfig;
+
+procedure RunBrowser(Lib: TLibrary; Cfg: TConfig);
+
+implementation
+
+uses
+  video, keyboard, mouse, SysUtils,
+  urecipe, urender, uopen;
+
+const
+  { attribute = foreground or (background shl 4) }
+  AttrNormal  = 7;                 { light gray on black }
+  AttrDim     = 8;                 { dark gray on black }
+  AttrTitle   = 15 or (1 shl 4);   { white on blue }
+  AttrStatus  = 0 or (7 shl 4);    { black on light gray }
+  AttrSel     = 15 or (3 shl 4);   { white on cyan }
+  AttrHeading = 14;                { yellow on black }
+
+type
+  TMode = (mList, mDetail);
+
+  TBrowser = class
+  private
+    FLib: TLibrary;
+    FCfg: TConfig;
+    FQuery: string;
+    FFiltered: TIntArray;
+    FSel: Integer;         { selected position within FFiltered }
+    FTop: Integer;         { first visible list row }
+    FMode: TMode;
+    FDetailIdx: Integer;   { library index of the shown recipe }
+    FLines: TDisplayLines; { detail display lines }
+    FDetTop: Integer;      { first visible detail line }
+    FHasMouse: Boolean;
+    FQuit: Boolean;
+    FDirty: Boolean;
+    FForce: Boolean;       { next repaint must resend the whole screen }
+    function ListRows: Integer;
+    function DetailRows: Integer;
+    procedure Refilter(ResetSel: Boolean);
+    procedure MoveSel(Delta: Integer);
+    procedure CancelOrBack;
+    procedure OpenDetail;
+    procedure DetailScroll(Delta: Integer);
+    procedure DrawList;
+    procedure DrawDetail;
+    procedure Draw;
+    procedure HandleKey(K: TKeyEvent);
+    procedure HandleMouse(const M: TMouseEvent);
+  public
+    constructor Create(Lib: TLibrary; Cfg: TConfig);
+    procedure Run;
+  end;
+
+{ --- low-level screen writing --- }
+
+procedure PutCell(x, y: Integer; ch: Char; Attr: Byte);
+begin
+  if (x < 0) or (y < 0) or (x >= ScreenWidth) or (y >= ScreenHeight) then Exit;
+  VideoBuf^[y * ScreenWidth + x] := Ord(ch) or (Attr shl 8);
+end;
+
+procedure PutStr(x, y: Integer; const S: string; Attr: Byte);
+var
+  i: Integer;
+begin
+  for i := 1 to Length(S) do
+    PutCell(x + i - 1, y, S[i], Attr);
+end;
+
+procedure FillRow(y: Integer; Attr: Byte);
+var
+  x: Integer;
+begin
+  for x := 0 to ScreenWidth - 1 do PutCell(x, y, ' ', Attr);
+end;
+
+procedure ClearAll(Attr: Byte);
+var
+  i: Integer;
+begin
+  for i := 0 to ScreenWidth * ScreenHeight - 1 do
+    VideoBuf^[i] := Ord(' ') or (Attr shl 8);
+end;
+
+{ --- TBrowser --- }
+
+constructor TBrowser.Create(Lib: TLibrary; Cfg: TConfig);
+begin
+  inherited Create;
+  FLib := Lib;
+  FCfg := Cfg;
+  FQuery := '';
+  FSel := 0;
+  FTop := 0;
+  FMode := mList;
+  FDirty := True;
+end;
+
+function TBrowser.ListRows: Integer;
+begin
+  Result := ScreenHeight - 4;      { rows 3 .. H-2 }
+  if Result < 1 then Result := 1;
+end;
+
+function TBrowser.DetailRows: Integer;
+begin
+  Result := ScreenHeight - 2;      { rows 1 .. H-2 }
+  if Result < 1 then Result := 1;
+end;
+
+procedure TBrowser.Refilter(ResetSel: Boolean);
+begin
+  FFiltered := FLib.Search(FQuery);
+  if ResetSel then begin FSel := 0; FTop := 0; end;
+  if FSel > High(FFiltered) then FSel := High(FFiltered);
+  if FSel < 0 then FSel := 0;
+  FDirty := True;
+end;
+
+procedure TBrowser.MoveSel(Delta: Integer);
+var
+  vis: Integer;
+begin
+  if Length(FFiltered) = 0 then Exit;
+  FSel := FSel + Delta;
+  if FSel < 0 then FSel := 0;
+  if FSel > High(FFiltered) then FSel := High(FFiltered);
+  vis := ListRows;
+  if FSel < FTop then FTop := FSel;
+  if FSel >= FTop + vis then FTop := FSel - vis + 1;
+  if FTop < 0 then FTop := 0;
+  FDirty := True;
+end;
+
+procedure TBrowser.OpenDetail;
+begin
+  if Length(FFiltered) = 0 then Exit;
+  FDetailIdx := FFiltered[FSel];
+  FLines := BuildDetailLines(FLib.Recipe(FDetailIdx), ScreenWidth - 2);
+  FDetTop := 0;
+  FMode := mDetail;
+  FDirty := True;
+end;
+
+procedure TBrowser.DetailScroll(Delta: Integer);
+var
+  maxTop: Integer;
+begin
+  maxTop := Length(FLines) - DetailRows;
+  if maxTop < 0 then maxTop := 0;
+  FDetTop := FDetTop + Delta;
+  if FDetTop > maxTop then FDetTop := maxTop;
+  if FDetTop < 0 then FDetTop := 0;
+  FDirty := True;
+end;
+
+procedure TBrowser.DrawList;
+var
+  i, y, idx, vis: Integer;
+  attr: Byte;
+  marker, title: string;
+begin
+  ClearAll(AttrNormal);
+
+  { title bar }
+  FillRow(0, AttrTitle);
+  title := FCfg.SiteTitle;
+  if Trim(title) = '' then title := 'Recipe Library';
+  PutStr(1, 0, 'tiecook2  -  ' + Disp(title), AttrTitle);
+
+  { search line + caret }
+  PutStr(0, 1, 'Search: ' + Disp(FQuery), AttrNormal);
+  PutCell(8 + Length(Disp(FQuery)), 1, '_', AttrNormal);
+
+  { separator }
+  PutStr(0, 2, StringOfChar('-', ScreenWidth), AttrDim);
+
+  { list }
+  vis := ListRows;
+  for i := 0 to vis - 1 do
+  begin
+    idx := FTop + i;
+    if idx > High(FFiltered) then Break;
+    y := 3 + i;
+    if idx = FSel then attr := AttrSel else attr := AttrNormal;
+    FillRow(y, attr);
+    if idx = FSel then marker := '> ' else marker := '  ';
+    PutStr(0, y, marker + ListLabel(FLib.Recipe(FFiltered[idx]), ScreenWidth - 2), attr);
+  end;
+
+  { status bar }
+  FillRow(ScreenHeight - 1, AttrStatus);
+  PutStr(0, ScreenHeight - 1,
+    Format(' %d/%d  type to search  Enter open  arrows move  F10/^Q quit',
+           [Length(FFiltered), FLib.Count]), AttrStatus);
+end;
+
+procedure TBrowser.DrawDetail;
+var
+  i, y, li: Integer;
+  attr: Byte;
+  line, status: string;
+begin
+  ClearAll(AttrNormal);
+
+  FillRow(0, AttrTitle);
+  PutStr(1, 0, Disp(FLib.Recipe(FDetailIdx).Title), AttrTitle);
+
+  for i := 0 to DetailRows - 1 do
+  begin
+    li := FDetTop + i;
+    if li > High(FLines) then Break;
+    y := 1 + i;
+    line := FLines[li];
+    if (line = 'Ingredients') or (line = 'Steps') then attr := AttrHeading
+    else attr := AttrNormal;
+    PutStr(1, y, line, attr);
+  end;
+
+  FillRow(ScreenHeight - 1, AttrStatus);
+  status := ' arrows scroll';
+  if FLib.Recipe(FDetailIdx).SourceUrl <> '' then status := status + '  o source';
+  if FLib.ImageBasename(FDetailIdx) <> '' then status := status + '  i image';
+  status := status + '  Bksp back  q quit';
+  PutStr(0, ScreenHeight - 1, status, AttrStatus);
+end;
+
+procedure TBrowser.Draw;
+begin
+  if FMode = mList then DrawList else DrawDetail;
+  UpdateScreen(FForce);
+  FForce := False;
+  FDirty := False;
+end;
+
+{ Go back from detail to list, or clear the search when on the list. This is
+  the "cancel" action, reachable by Backspace (on an empty query) and by the
+  best-effort Esc code. }
+procedure TBrowser.CancelOrBack;
+begin
+  if FMode = mDetail then
+  begin
+    FMode := mList;
+    FDirty := True;
+  end
+  else if FQuery <> '' then
+  begin
+    FQuery := '';
+    Refilter(True);
+  end;
+end;
+
+procedure TBrowser.HandleKey(K: TKeyEvent);
+var
+  kind: Byte;
+  code: Word;
+  ch: Char;
+  img: string;
+begin
+  kind := GetKeyEventFlags(K) and $03;
+
+  if (kind = kbFnKey) or (kind = kbPhys) then
+  begin
+    code := GetKeyEventCode(K);
+    { F10 quits from anywhere. (Esc is unreliable via FPC's keyboard unit on
+      Linux - it is the lead byte of every escape sequence - so it is handled
+      only as ASCII #27 below, which is what win64 and some terminals send.) }
+    if code = kbdF10 then begin FQuit := True; Exit; end;
+    if FMode = mList then
+      case code of
+        kbdUp:    MoveSel(-1);
+        kbdDown:  MoveSel(1);
+        kbdPgUp:  MoveSel(-ListRows);
+        kbdPgDn:  MoveSel(ListRows);
+        kbdHome:  MoveSel(-Length(FFiltered));
+        kbdEnd:   MoveSel(Length(FFiltered));
+      end
+    else
+      case code of
+        kbdUp:    DetailScroll(-1);
+        kbdDown:  DetailScroll(1);
+        kbdPgUp:  DetailScroll(-DetailRows);
+        kbdPgDn:  DetailScroll(DetailRows);
+        kbdHome:  DetailScroll(-Length(FLines));
+        kbdEnd:   DetailScroll(Length(FLines));
+        kbdLeft:  CancelOrBack;
+      end;
+    Exit;
+  end;
+
+  ch := GetKeyEventChar(K);
+  if FMode = mList then
+    case ch of
+      #13: OpenDetail;                                   { Enter }
+      #27: CancelOrBack;                                 { Esc (when it arrives) }
+      #17: FQuit := True;                                { Ctrl-Q }
+      #8:  if FQuery <> '' then                          { Backspace: edit... }
+           begin
+             Delete(FQuery, Length(FQuery), 1);
+             Refilter(True);
+           end;
+      #32..#126:                                         { type into search }
+        begin
+          FQuery := FQuery + ch;
+          Refilter(True);
+        end;
+    end
+  else
+    case ch of
+      #13, #8, #27: CancelOrBack;                        { Enter / Backspace / Esc: back }
+      #17, 'q', 'Q': FQuit := True;                      { letters are free here }
+      'o', 'O':
+        if FLib.Recipe(FDetailIdx).SourceUrl <> '' then
+        begin
+          OpenExternal(FLib.Recipe(FDetailIdx).SourceUrl);
+          FForce := True; FDirty := True;
+        end;
+      'i', 'I':
+        begin
+          img := FLib.ImageBasename(FDetailIdx);
+          if img <> '' then
+          begin
+            OpenExternal(IncludeTrailingPathDelimiter(FLib.Dir) + img);
+            FForce := True; FDirty := True;
+          end;
+        end;
+    end;
+end;
+
+procedure TBrowser.HandleMouse(const M: TMouseEvent);
+var
+  idx: Integer;
+begin
+  if (M.Action and MouseActionDown) = 0 then Exit;
+
+  if (M.Buttons and MouseButton4) <> 0 then          { wheel up }
+  begin
+    if FMode = mList then MoveSel(-3) else DetailScroll(-3);
+    Exit;
+  end;
+  if (M.Buttons and MouseButton5) <> 0 then          { wheel down }
+  begin
+    if FMode = mList then MoveSel(3) else DetailScroll(3);
+    Exit;
+  end;
+
+  if (M.Buttons and MouseLeftButton) <> 0 then
+  begin
+    if FMode = mList then
+    begin
+      { list rows start at screen row 3 }
+      idx := FTop + (Integer(M.y) - 3);
+      if (Integer(M.y) >= 3) and (idx >= 0) and (idx <= High(FFiltered)) then
+      begin
+        if idx = FSel then OpenDetail
+        else begin FSel := idx; FDirty := True; end;
+      end;
+    end;
+  end;
+end;
+
+procedure TBrowser.Run;
+var
+  K: TKeyEvent;
+  M: TMouseEvent;
+begin
+  InitVideo;
+  InitKeyboard;
+  SetCursorType(crHidden);
+  FHasMouse := DetectMouse > 0;
+  if FHasMouse then InitMouse;
+  try
+    Refilter(True);
+    repeat
+      if FDirty then Draw;
+      if PollKeyEvent <> 0 then
+        HandleKey(TranslateKeyEvent(GetKeyEvent))
+      else if FHasMouse and PollMouseEvent(M) then
+        HandleMouse(M)
+      else
+        Sleep(15);
+    until FQuit;
+  finally
+    if FHasMouse then DoneMouse;
+    SetCursorType(crUnderLine);
+    DoneKeyboard;
+    DoneVideo;
+    {$ifdef unix}
+    Write(#27'[0m'#27'[2J'#27'[H'#27'[?25h');
+    {$endif}
+  end;
+end;
+
+procedure RunBrowser(Lib: TLibrary; Cfg: TConfig);
+var
+  B: TBrowser;
+begin
+  B := TBrowser.Create(Lib, Cfg);
+  try
+    B.Run;
+  finally
+    B.Free;
+  end;
+end;
+
+end.

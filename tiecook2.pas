@@ -12,7 +12,7 @@ program tiecook2;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, urecipe, uconfig, ulibrary, uimp_mealmaster, uexport_html;
+  SysUtils, Classes, urecipe, uconfig, ulibrary, uimp_mealmaster, uexport_html, uui;
 
 procedure Usage;
 begin
@@ -278,6 +278,29 @@ begin
   end;
 end;
 
+procedure DoBrowse(Args: TStrings);
+var
+  Cfg: TConfig;
+  Lib: TLibrary;
+  libOverride: string;
+begin
+  libOverride := PopLibrary(Args);
+  if Args.Count <> 0 then begin Usage; Halt(1); end;
+  Cfg := LoadOrSeedConfig;
+  try
+    if libOverride <> '' then Cfg.LibraryDir := libOverride;
+    Lib := TLibrary.Create(Cfg.LibraryDir);
+    try
+      Lib.Load;
+      RunBrowser(Lib, Cfg);
+    finally
+      Lib.Free;
+    end;
+  finally
+    Cfg.Free;
+  end;
+end;
+
 { --- entry point --- }
 
 procedure Dispatch;
@@ -286,16 +309,20 @@ var
   cmd, src: string;
   i: Integer;
 begin
-  if ParamCount = 0 then
-  begin
-    WriteLn('tiecook2: browser not implemented yet');
-    Exit;
-  end;
-
   cmd := LowerCase(ParamStr(1));
   Args := TStringList.Create;
   try
-    if cmd = 'import' then
+    if ParamCount = 0 then
+    begin
+      DoBrowse(Args);                       { no arguments: browse }
+    end
+    else if (Copy(cmd, 1, 2) = '--') then
+    begin
+      { options with no command, e.g. `tiecook2 --library DIR`: browse }
+      for i := 1 to ParamCount do Args.Add(ParamStr(i));
+      DoBrowse(Args);
+    end
+    else if cmd = 'import' then
     begin
       src := LowerCase(ParamStr(2));
       for i := 3 to ParamCount do Args.Add(ParamStr(i));

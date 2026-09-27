@@ -5,19 +5,23 @@ unit uconfig;
     [library]
     dir=<recipe library path>
 
-    [tandoor]                 ; used by the Tandoor importer (later)
+    [tandoor]
     url=
     token=
 
-    [site]                    ; used by HTML export (later)
+    [site]
     title=My Recipes
     intro=
     footer=
     header_image=
     background_image=
-    personal_keyword=         ; recipes with this keyword form the personal section
-                              ; (empty = none; e.g. set to your name)
-    favorite_keyword=Favorite ; recipes with this keyword are highlighted
+    personal_keyword=
+    favorite_keyword=Favorite
+
+  [tandoor] is used by the Tandoor importer (later); [site] by HTML export.
+  personal_keyword marks the personal section (empty = none); favorite_keyword
+  marks highlighted recipes. Comments in the file must be on their own line
+  starting with ';' - TIniFile keeps any trailing "; ..." as part of the value.
 
   Location: $XDG_CONFIG_HOME/tiecook2/config.ini (or ~/.config/tiecook2/...)
   on unix, %APPDATA%\tiecook2\config.ini on Windows. }
