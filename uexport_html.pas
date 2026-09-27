@@ -128,33 +128,6 @@ begin
   end;
 end;
 
-const
-  ImgExts: array[0..3] of string = ('.jpg', '.jpeg', '.png', '.webp');
-
-{ The recipe's photo as a basename that actually exists in the library dir,
-  or '' if none. Honours an explicit `image:` (basename only, so it can never
-  point outside the library) and falls back to a drop-in `<slug>.<ext>`. }
-function ResolveImage(Lib: TLibrary; Index: Integer): string;
-var
-  R: TRecipe;
-  base, cand, libd: string;
-  e: Integer;
-begin
-  Result := '';
-  R := Lib.Recipe(Index);
-  libd := IncludeTrailingPathDelimiter(Lib.Dir);
-  if R.Image <> '' then
-  begin
-    base := ExtractFileName(R.Image);   { strip any path components }
-    if (base <> '') and FileExists(libd + base) then Exit(base);
-  end;
-  for e := Low(ImgExts) to High(ImgExts) do
-  begin
-    cand := Lib.Slug(Index) + ImgExts[e];
-    if FileExists(libd + cand) then Exit(cand);
-  end;
-end;
-
 function HasKeyword(const R: TRecipe; const K: string): Boolean;
 var
   i: Integer;
@@ -466,7 +439,7 @@ begin
   for i := 0 to High(order) do
   begin
     R := Lib.Recipe(order[i]);
-    imgName := ResolveImage(Lib, order[i]);
+    imgName := Lib.ImageBasename(order[i]);
     WriteTextFile(outp + Lib.Slug(order[i]) + '.htm', RecipePage(R, Cfg, imgName));
     if imgName <> '' then
     begin

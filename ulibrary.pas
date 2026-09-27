@@ -34,6 +34,10 @@ type
     function Recipe(Index: Integer): TRecipe;
     function Slug(Index: Integer): string;
     function FilePath(Index: Integer): string;
+    { The recipe's photo as a basename that exists in the library dir, or ''.
+      Honours an explicit `image:` (basename only, never a path outside the
+      library) and falls back to a drop-in <slug>.jpg/.jpeg/.png/.webp. }
+    function ImageBasename(Index: Integer): string;
     { First index whose source+source-id match, or -1. }
     function IndexOfSource(const Source, SourceId: string): Integer;
     { Indices whose title/keywords/ingredients/description/steps contain Query
@@ -49,6 +53,9 @@ implementation
 
 uses
   SysUtils, Classes;
+
+const
+  ImgExts: array[0..3] of string = ('.jpg', '.jpeg', '.png', '.webp');
 
 function DedupKey(const Source, SourceId: string): string;
 begin
@@ -108,6 +115,27 @@ end;
 function TLibrary.FilePath(Index: Integer): string;
 begin
   Result := IncludeTrailingPathDelimiter(FDir) + FEntries[Index].Slug + '.txt';
+end;
+
+function TLibrary.ImageBasename(Index: Integer): string;
+var
+  R: TRecipe;
+  base, cand, libd: string;
+  e: Integer;
+begin
+  Result := '';
+  R := FEntries[Index].Recipe;
+  libd := IncludeTrailingPathDelimiter(FDir);
+  if R.Image <> '' then
+  begin
+    base := ExtractFileName(R.Image);
+    if (base <> '') and FileExists(libd + base) then Exit(base);
+  end;
+  for e := Low(ImgExts) to High(ImgExts) do
+  begin
+    cand := FEntries[Index].Slug + ImgExts[e];
+    if FileExists(libd + cand) then Exit(cand);
+  end;
 end;
 
 function TLibrary.IndexOfSource(const Source, SourceId: string): Integer;
