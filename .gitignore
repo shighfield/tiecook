@@ -1,0 +1,21 @@
+# build output
+units/
+units-win64/
+*.o
+*.ppu
+*.rsj
+tiecook2
+tiecook2.exe
+*.dll
+
+# user's own recipes, used only as local test input
+samples/
+
+# editor/tooling
+.claude/
+
+# local export preview (not committed)
+preview/
+
+# test build artifacts
+test/.build/
