@@ -5,7 +5,7 @@ program ulibrary_test;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, urecipe, uconfig, ulibrary;
+  SysUtils, Classes, urecipe, uconfig, ulibrary;
 
 var
   Failures: Integer = 0;
@@ -44,7 +44,7 @@ begin
 end;
 
 var
-  dir, cfgpath: string;
+  dir, cfgpath, imgFn, delSlug: string;
   Lib: TLibrary;
   R: TRecipe;
   hits: TIntArray;
@@ -130,6 +130,34 @@ begin
 
     Check(Lib.IndexOfSource('mealmaster', 'squash.mmf') >= 0, 'IndexOfSource hit');
     Check(Lib.IndexOfSource('mealmaster', 'missing') = -1, 'IndexOfSource miss');
+  finally
+    Lib.Free;
+  end;
+
+  { delete (with its image) and reload-after-edit }
+  Lib := TLibrary.Create(dir);
+  try
+    Lib.Load;
+    Check(Lib.Count = 3, 'three recipes before delete');
+    { give one recipe a sidecar image so DeleteAt removes it too }
+    R := Lib.Recipe(0);
+    imgFn := IncludeTrailingPathDelimiter(dir) + Lib.Slug(0) + '.jpg';
+    with TFileStream.Create(imgFn, fmCreate) do begin WriteByte(1); Free; end;
+    Check(Lib.ImageBasename(0) <> '', 'sidecar image is found');
+    delSlug := Lib.Slug(0);
+    Lib.DeleteAt(0);
+    Check(Lib.Count = 2, 'delete drops the entry');
+    Check(not FileExists(IncludeTrailingPathDelimiter(dir) + delSlug + '.txt'),
+          'delete removes the recipe file');
+    Check(not FileExists(imgFn), 'delete removes the recipe photo');
+
+    { edit a file on disk, then ReloadAt picks it up }
+    R := Lib.Recipe(0);
+    R.Title := R.Title + ' EDITED';
+    SaveRecipe(R, Lib.FilePath(0));
+    Check(Pos('EDITED', Lib.Recipe(0).Title) = 0, 'in-memory copy unchanged before reload');
+    Lib.ReloadAt(0);
+    Check(Pos('EDITED', Lib.Recipe(0).Title) > 0, 'ReloadAt picks up the edited title');
   finally
     Lib.Free;
   end;

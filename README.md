@@ -28,7 +28,7 @@ yours lives elsewhere.
 ## Commands
 
 ```
-tiecook2                                   browse the library (read-only TUI)
+tiecook2                                   browse, edit and delete recipes (TUI)
 tiecook2 list [--library DIR]              list every recipe
 tiecook2 search [--library DIR] <words>    search titles/keywords/text
 tiecook2 import mealmaster [--library DIR] <file|dir>...
@@ -72,13 +72,20 @@ Run `tiecook2` with no arguments.
   Backspace to edit.
 - Up/Down/PgUp/PgDn/Home/End to move; the mouse selects and the wheel scrolls.
 - Enter (or click the selected recipe) opens it.
+- F4 edits the highlighted recipe, F8 deletes it (with a confirmation).
 - F10 quits.
 
 **Recipe view**
 
 - Up/Down/PgUp/PgDn/Home/End (or the wheel) scroll.
+- `e` edits the recipe, `d` deletes it (with a confirmation).
 - `o` opens the recipe's source URL, `i` opens its photo, in your default app.
 - Backspace (or Left) goes back to the list; `q` or F10 quits.
+
+Edit opens the recipe's plain-text file in your editor, resolved from the
+config `[editor] command`, then `$VISUAL`, then `$EDITOR`, then a per-OS
+default (`nano` / `notepad`). Delete removes the recipe file and its photo;
+there is no undo, hence the confirmation.
 
 Non-ASCII characters are transliterated to ASCII for the terminal display
 (the console is one byte per cell); the library files and the exported HTML
@@ -118,6 +125,10 @@ background_image=
 personal_keyword=
 ; recipes with this keyword are highlighted
 favorite_keyword=Favorite
+
+[editor]
+; editor for the browser's edit command (blank = $VISUAL / $EDITOR / default)
+command=
 ```
 
 Recipe photos: give a recipe an `image:` line naming a file next to it in the

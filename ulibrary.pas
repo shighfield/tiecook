@@ -46,6 +46,11 @@ type
     { Write R to the library, overwriting a same-source file or creating a new
       one. Returns the slug; sets WasUpdate. Keeps the in-memory index current. }
     function AddOrUpdate(const R: TRecipe; out WasUpdate: Boolean): string;
+    { Delete a recipe's file (and its photo) and drop it from the index.
+      Indices above it shift down by one. }
+    procedure DeleteAt(Index: Integer);
+    { Re-read a recipe's file into the index (after it was edited on disk). }
+    procedure ReloadAt(Index: Integer);
     property Dir: string read FDir;
   end;
 
@@ -194,6 +199,28 @@ begin
   end;
   ForceDirectories(FDir);
   SaveRecipe(R, IncludeTrailingPathDelimiter(FDir) + Result + '.txt');
+end;
+
+procedure TLibrary.DeleteAt(Index: Integer);
+var
+  img: string;
+  i: Integer;
+begin
+  if (Index < 0) or (Index > High(FEntries)) then Exit;
+  img := ImageBasename(Index);
+  if FileExists(FilePath(Index)) then DeleteFile(FilePath(Index));
+  if img <> '' then
+    DeleteFile(IncludeTrailingPathDelimiter(FDir) + img);
+  for i := Index to High(FEntries) - 1 do
+    FEntries[i] := FEntries[i + 1];
+  SetLength(FEntries, Length(FEntries) - 1);
+end;
+
+procedure TLibrary.ReloadAt(Index: Integer);
+begin
+  if (Index < 0) or (Index > High(FEntries)) then Exit;
+  if FileExists(FilePath(Index)) then
+    FEntries[Index].Recipe := LoadRecipe(FilePath(Index));
 end;
 
 { --- search --- }

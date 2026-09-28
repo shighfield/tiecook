@@ -17,7 +17,7 @@ procedure RunBrowser(Lib: TLibrary; Cfg: TConfig);
 implementation
 
 uses
-  video, keyboard, mouse, SysUtils,
+  video, keyboard, mouse, SysUtils, Classes, Process,
   urecipe, urender, uopen;
 
 const
@@ -58,6 +58,11 @@ type
     procedure DrawList;
     procedure DrawDetail;
     procedure Draw;
+    function ConfirmYN(const Msg: string): Boolean;
+    procedure TeardownIO;
+    procedure InitIO;
+    procedure EditIndex(LibIdx: Integer);
+    procedure DeleteIndex(LibIdx: Integer);
     procedure HandleKey(K: TKeyEvent);
     procedure HandleMouse(const M: TMouseEvent);
   public
@@ -205,7 +210,7 @@ begin
   { status bar }
   FillRow(ScreenHeight - 1, AttrStatus);
   PutStr(0, ScreenHeight - 1,
-    Format(' %d/%d  type to search  Enter open  arrows move  F10/^Q quit',
+    Format(' %d/%d  Enter open  F4 edit  F8 del  type=search  F10/^Q quit',
            [Length(FFiltered), FLib.Count]), AttrStatus);
 end;
 
@@ -232,7 +237,7 @@ begin
   end;
 
   FillRow(ScreenHeight - 1, AttrStatus);
-  status := ' arrows scroll';
+  status := ' scroll  e edit  d delete';
   if FLib.Recipe(FDetailIdx).SourceUrl <> '' then status := status + '  o source';
   if FLib.ImageBasename(FDetailIdx) <> '' then status := status + '  i image';
   status := status + '  Bksp back  q quit';
@@ -245,6 +250,80 @@ begin
   UpdateScreen(FForce);
   FForce := False;
   FDirty := False;
+end;
+
+function TBrowser.ConfirmYN(const Msg: string): Boolean;
+var
+  K: TKeyEvent;
+  ch: Char;
+begin
+  FillRow(ScreenHeight - 1, AttrSel);
+  PutStr(1, ScreenHeight - 1, Msg + '    y = yes, any other key = no', AttrSel);
+  UpdateScreen(True);
+  K := TranslateKeyEvent(GetKeyEvent);   { translate so the char is populated }
+  ch := GetKeyEventChar(K);
+  Result := (ch = 'y') or (ch = 'Y');
+  FForce := True;
+  FDirty := True;
+end;
+
+{ Open the recipe file in the external editor. Tears the console down so the
+  editor owns it, waits, then re-initialises and reloads the recipe. }
+procedure TBrowser.EditIndex(LibIdx: Integer);
+var
+  P: TProcess;
+  parts: TStringList;
+  fn: string;
+  i: Integer;
+begin
+  if (LibIdx < 0) or (LibIdx >= FLib.Count) then Exit;
+  fn := FLib.FilePath(LibIdx);
+  TeardownIO;
+  try
+    P := TProcess.Create(nil);
+    parts := TStringList.Create;
+    try
+      parts.Delimiter := ' ';
+      parts.StrictDelimiter := True;
+      parts.DelimitedText := FCfg.EditorCommand;
+      if parts.Count = 0 then parts.Add(FCfg.EditorCommand);
+      P.Executable := parts[0];
+      for i := 1 to parts.Count - 1 do
+        if parts[i] <> '' then P.Parameters.Add(parts[i]);
+      P.Parameters.Add(fn);
+      P.Options := [poWaitOnExit];   { inherit the terminal; block until done }
+      P.Execute;
+    finally
+      parts.Free;
+      P.Free;
+    end;
+  except
+    on E: Exception do ;             { editor missing/unlaunchable: carry on }
+  end;
+  InitIO;
+  FLib.ReloadAt(LibIdx);
+  Refilter(False);
+  if FMode = mDetail then
+  begin
+    FDetailIdx := LibIdx;
+    FLines := BuildDetailLines(FLib.Recipe(LibIdx), ScreenWidth - 2);
+    if FDetTop > High(FLines) then FDetTop := 0;
+  end;
+  FForce := True;
+  FDirty := True;
+end;
+
+procedure TBrowser.DeleteIndex(LibIdx: Integer);
+begin
+  if (LibIdx < 0) or (LibIdx >= FLib.Count) then Exit;
+  if not ConfirmYN('Delete "' + Disp(FLib.Recipe(LibIdx).Title) + '"?') then Exit;
+  FLib.DeleteAt(LibIdx);
+  FMode := mList;
+  Refilter(False);
+  if FSel > High(FFiltered) then FSel := High(FFiltered);
+  if FSel < 0 then FSel := 0;
+  FForce := True;
+  FDirty := True;
 end;
 
 { Go back from detail to list, or clear the search when on the list. This is
@@ -288,6 +367,8 @@ begin
         kbdPgDn:  MoveSel(ListRows);
         kbdHome:  MoveSel(-Length(FFiltered));
         kbdEnd:   MoveSel(Length(FFiltered));
+        kbdF4:    if Length(FFiltered) > 0 then EditIndex(FFiltered[FSel]);
+        kbdF8:    if Length(FFiltered) > 0 then DeleteIndex(FFiltered[FSel]);
       end
     else
       case code of
@@ -323,6 +404,8 @@ begin
     case ch of
       #13, #8, #27: CancelOrBack;                        { Enter / Backspace / Esc: back }
       #17, 'q', 'Q': FQuit := True;                      { letters are free here }
+      'e', 'E': EditIndex(FDetailIdx);
+      'd', 'D': DeleteIndex(FDetailIdx);
       'o', 'O':
         if FLib.Recipe(FDetailIdx).SourceUrl <> '' then
         begin
@@ -373,16 +456,31 @@ begin
   end;
 end;
 
-procedure TBrowser.Run;
-var
-  K: TKeyEvent;
-  M: TMouseEvent;
+procedure TBrowser.InitIO;
 begin
   InitVideo;
   InitKeyboard;
   SetCursorType(crHidden);
   FHasMouse := DetectMouse > 0;
   if FHasMouse then InitMouse;
+end;
+
+procedure TBrowser.TeardownIO;
+begin
+  if FHasMouse then DoneMouse;
+  SetCursorType(crUnderLine);
+  DoneKeyboard;
+  DoneVideo;
+  {$ifdef unix}
+  Write(#27'[0m'#27'[2J'#27'[H'#27'[?25h');
+  {$endif}
+end;
+
+procedure TBrowser.Run;
+var
+  M: TMouseEvent;
+begin
+  InitIO;
   try
     Refilter(True);
     repeat
@@ -395,13 +493,7 @@ begin
         Sleep(15);
     until FQuit;
   finally
-    if FHasMouse then DoneMouse;
-    SetCursorType(crUnderLine);
-    DoneKeyboard;
-    DoneVideo;
-    {$ifdef unix}
-    Write(#27'[0m'#27'[2J'#27'[H'#27'[?25h');
-    {$endif}
+    TeardownIO;
   end;
 end;
 
