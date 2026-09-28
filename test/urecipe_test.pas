@@ -230,6 +230,26 @@ begin
   end;
 end;
 
+procedure TestStripSource;
+var
+  outp, url: string;
+begin
+  { plain "Shawn" source -> section removed, no URL }
+  outp := StripSourceSection('Cook it well.' + LF + LF + '### Source' + LF + 'Shawn', url);
+  Check(outp = 'Cook it well.', 'source section removed');
+  Check(url = '', 'no URL when source is a name');
+
+  { source with a URL -> section removed, URL captured }
+  outp := StripSourceSection('Bake.' + LF + LF + '### Source ' + LF + 'Dairy' + LF +
+                             'https://ex.com/r', url);
+  Check(outp = 'Bake.', 'source-with-url section removed');
+  Check(url = 'https://ex.com/r', 'URL captured from source section');
+
+  { no source section -> unchanged }
+  outp := StripSourceSection('Just cook it.', url);
+  Check((outp = 'Just cook it.') and (url = ''), 'text without a source section is unchanged');
+end;
+
 begin
   TestRoundTrip;
   TestParseAuthored;
@@ -238,6 +258,7 @@ begin
   TestCrlfContinuation;
   TestNormalization;
   TestUtf8;
+  TestStripSource;
   WriteLn(Format('%d checks, %d failures', [Checks, Failures]));
   if Failures > 0 then
     Halt(1);

@@ -136,7 +136,7 @@ var
   i, j: Integer;
   st: umodels.TStep;
   ing: umodels.TIngredient;
-  instr, headText: string;
+  instr, headText, srcUrl: string;
 begin
   InitRecipe(Result);
   Result.Title := D.Name;
@@ -176,7 +176,13 @@ begin
   for i := 0 to High(D.Steps) do
   begin
     instr := Trim(D.Steps[i].Instruction);
-    if instr <> '' then AddStep(Result, instr);
+    if instr <> '' then
+    begin
+      { strip Tandoor's "### Source" trailer; keep a real URL as source-url }
+      instr := Trim(StripSourceSection(instr, srcUrl));
+      if (srcUrl <> '') and (Result.SourceUrl = '') then Result.SourceUrl := srcUrl;
+      if instr <> '' then AddStep(Result, instr);
+    end;
   end;
 end;
 

@@ -76,6 +76,12 @@ procedure SaveRecipe(const R: TRecipe; const FileName: string);
   characters folded to single hyphens. Empty input yields 'recipe'. }
 function Slugify(const S: string): string;
 
+{ Remove a trailing markdown "### Source" section from a block of text (Tandoor
+  appends one to a recipe's last step). Returns the text without it; if the
+  section held a URL, returns it in Url. If there is no such section the text
+  is returned unchanged and Url is ''. }
+function StripSourceSection(const S: string; out Url: string): string;
+
 implementation
 
 uses
@@ -542,6 +548,60 @@ begin
   while (Result <> '') and (Result[Length(Result)] = '-') do
     Delete(Result, Length(Result), 1);
   if Result = '' then Result := 'recipe';
+end;
+
+function StripSourceSection(const S: string; out Url: string): string;
+var
+  Lines: TStringList;
+  i, markerAt, p: Integer;
+  t, u: string;
+begin
+  Url := '';
+  Result := S;
+  Lines := TStringList.Create;
+  try
+    Lines.TextLineBreakStyle := tlbsLF;
+    Lines.Text := StringReplace(StringReplace(S, #13#10, LF, [rfReplaceAll]),
+                                #13, LF, [rfReplaceAll]);
+    { find a line that is only '#'s followed by 'source' }
+    markerAt := -1;
+    for i := 0 to Lines.Count - 1 do
+    begin
+      t := Trim(Lines[i]);
+      if (t <> '') and (t[1] = '#') then
+      begin
+        while (t <> '') and (t[1] = '#') do Delete(t, 1, 1);
+        if LowerCase(Trim(t)) = 'source' then begin markerAt := i; Break; end;
+      end;
+    end;
+    if markerAt < 0 then Exit;
+
+    { pull the first URL out of the section }
+    for i := markerAt + 1 to Lines.Count - 1 do
+    begin
+      p := Pos('http://', LowerCase(Lines[i]));
+      if p = 0 then p := Pos('https://', LowerCase(Lines[i]));
+      if p > 0 then
+      begin
+        u := Copy(Lines[i], p, Length(Lines[i]));
+        p := Pos(' ', u);
+        if p > 0 then u := Copy(u, 1, p - 1);
+        Url := Trim(u);
+        Break;
+      end;
+    end;
+
+    { drop the section and any blank lines that preceded it }
+    while (markerAt > 0) and (Trim(Lines[markerAt - 1]) = '') do Dec(markerAt);
+    Result := '';
+    for i := 0 to markerAt - 1 do
+    begin
+      if i > 0 then Result := Result + LF;
+      Result := Result + Lines[i];
+    end;
+  finally
+    Lines.Free;
+  end;
 end;
 
 end.
