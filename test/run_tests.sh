@@ -7,11 +7,15 @@ root="$(cd "$here/.." && pwd)"
 build="$here/.build"
 mkdir -p "$build"
 
+# Tests that pull in the Tandoor client link OpenSSL/libc, which needs gcc's
+# crt*.o; point FPC at gcc's lib dir (matches the Makefile).
+gcclib="$(dirname "$(gcc -print-file-name=crtendS.o)")"
+
 fail=0
 for src in "$here"/*_test.pas; do
     name="$(basename "$src" .pas)"
     echo "== building $name"
-    fpc -Mobjfpc -Sh -vw -Fu"$root" -FU"$build" -o"$build/$name" "$src" >/dev/null
+    fpc -Mobjfpc -Sh -vw -Fu"$root" -FU"$build" -Fl"$gcclib" -o"$build/$name" "$src" >/dev/null
     echo "== running $name"
     if ! "$build/$name"; then
         fail=1

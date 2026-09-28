@@ -48,6 +48,9 @@ type
     constructor Create(const APath: string = '');
     procedure Load;
     procedure Save;
+    { If TandoorUrl/TandoorToken are still empty, fill them from the existing
+      tiecook config (~/.config/tiecook/config, keys base_url + token). }
+    procedure ResolveTandoorFromTiecook;
     property Path: string read FPath;
   end;
 
@@ -59,7 +62,7 @@ function DefaultLibraryDir: string;
 implementation
 
 uses
-  SysUtils, IniFiles;
+  SysUtils, Classes, IniFiles;
 
 {$ifdef windows}
 function AppData(const Leaf: string): string;
@@ -76,6 +79,12 @@ end;
 function DefaultLibraryDir: string;
 begin
   Result := AppData('recipes');
+end;
+
+function TiecookConfigFile: string;
+begin
+  Result := IncludeTrailingPathDelimiter(GetEnvironmentVariable('APPDATA'))
+            + 'tiecook\config';
 end;
 {$else}
 function ConfigBase: string;
@@ -100,6 +109,11 @@ end;
 function DefaultLibraryDir: string;
 begin
   Result := IncludeTrailingPathDelimiter(DataBase) + 'tiecook2/recipes';
+end;
+
+function TiecookConfigFile: string;
+begin
+  Result := IncludeTrailingPathDelimiter(ConfigBase) + 'tiecook/config';
 end;
 {$endif}
 
@@ -140,6 +154,32 @@ begin
     FavoriteKeyword := Ini.ReadString('site', 'favorite_keyword', FavoriteKeyword);
   finally
     Ini.Free;
+  end;
+end;
+
+procedure TConfig.ResolveTandoorFromTiecook;
+var
+  SL: TStringList;
+  i, p: Integer;
+  key, val, fn: string;
+begin
+  if (Trim(TandoorUrl) <> '') and (Trim(TandoorToken) <> '') then Exit;
+  fn := TiecookConfigFile;
+  if not FileExists(fn) then Exit;
+  SL := TStringList.Create;
+  try
+    SL.LoadFromFile(fn);
+    for i := 0 to SL.Count - 1 do
+    begin
+      p := Pos('=', SL[i]);
+      if p = 0 then Continue;
+      key := LowerCase(Trim(Copy(SL[i], 1, p - 1)));
+      val := Trim(Copy(SL[i], p + 1, Length(SL[i])));
+      if (key = 'base_url') and (Trim(TandoorUrl) = '') then TandoorUrl := val
+      else if (key = 'token') and (Trim(TandoorToken) = '') then TandoorToken := val;
+    end;
+  finally
+    SL.Free;
   end;
 end;
 
