@@ -132,6 +132,10 @@ favorite_keyword=Favorite
 [editor]
 ; editor for the browser's edit command (blank = $VISUAL / $EDITOR / default)
 command=
+
+[ui]
+; show the ASCII-art title screen on launch
+splash=true
 ```
 
 Recipe photos: give a recipe an `image:` line naming a file next to it in the

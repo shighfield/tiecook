@@ -58,6 +58,7 @@ type
     procedure DrawList;
     procedure DrawDetail;
     procedure Draw;
+    procedure ShowTitle;
     function ConfirmYN(const Msg: string): Boolean;
     function PromptText(const Prompt: string; out Value: string): Boolean;
     procedure Flash(const Msg: string);
@@ -102,6 +103,15 @@ var
 begin
   for i := 0 to ScreenWidth * ScreenHeight - 1 do
     VideoBuf^[i] := Ord(' ') or (Attr shl 8);
+end;
+
+procedure PutCentered(y: Integer; const S: string; Attr: Byte);
+var
+  x: Integer;
+begin
+  x := (ScreenWidth - Length(S)) div 2;
+  if x < 0 then x := 0;
+  PutStr(x, y, S, Attr);
 end;
 
 { --- TBrowser --- }
@@ -253,6 +263,44 @@ begin
   UpdateScreen(FForce);
   FForce := False;
   FDirty := False;
+end;
+
+{ The startup splash: an ASCII-art banner (figlet "standard" font), the site
+  title, a tagline, the recipe count and a prompt. Any key dismisses it. }
+procedure TBrowser.ShowTitle;
+const
+  AttrBanner = 11;   { light cyan on black }
+  BannerW = 39;
+  Banner: array[0..4] of string = (
+    ' _   _                      _    ____',
+    '| |_(_) ___  ___ ___   ___ | | _|___ \',
+    '| __| |/ _ \/ __/ _ \ / _ \| |/ / __) |',
+    '| |_| |  __/ (_| (_) | (_) |   < / __/',
+    ' \__|_|\___|\___\___/ \___/|_|\_\_____|');
+var
+  top, x, i, cy: Integer;
+  sub: string;
+begin
+  ClearAll(AttrNormal);
+  top := (ScreenHeight - 12) div 2;
+  if top < 0 then top := 0;
+  x := (ScreenWidth - BannerW) div 2;
+  if x < 0 then x := 0;
+  for i := 0 to High(Banner) do
+    PutStr(x, top + i, Banner[i], AttrBanner);
+
+  cy := top + 6;
+  sub := Trim(FCfg.SiteTitle);
+  if sub = '' then sub := 'Recipe Library';
+  PutCentered(cy, Disp(sub), 15);                          { site title, bright white }
+  PutCentered(cy + 1, 'your recipe library', AttrNormal);
+  PutCentered(cy + 3, IntToStr(FLib.Count) + ' recipes', AttrNormal);
+  PutCentered(cy + 5, 'press any key to begin', AttrHeading);
+
+  UpdateScreen(True);
+  TranslateKeyEvent(GetKeyEvent);      { wait for any key }
+  FForce := True;
+  FDirty := True;
 end;
 
 function TBrowser.ConfirmYN(const Msg: string): Boolean;
@@ -558,6 +606,7 @@ begin
   InitIO;
   try
     Refilter(True);
+    if FCfg.Splash then ShowTitle;
     repeat
       if FDirty then Draw;
       if PollKeyEvent <> 0 then
