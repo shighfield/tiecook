@@ -26,7 +26,7 @@ const
   AttrDim     = 8;                 { dark gray on black }
   AttrTitle   = 15 or (1 shl 4);   { white on blue }
   AttrStatus  = 0 or (7 shl 4);    { black on light gray }
-  AttrSel     = 15 or (3 shl 4);   { white on cyan }
+  AttrSel     = 0 or (3 shl 4);    { black on cyan (dark text -> high contrast) }
   AttrHeading = 14;                { yellow on black }
 
 type
