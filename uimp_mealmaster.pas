@@ -26,14 +26,28 @@ unit uimp_mealmaster;
 interface
 
 uses
-  urecipe;
+  Classes, urecipe, ulibrary;
 
+type
+  TMMProgress = procedure(const Title: string; WasUpdate: Boolean);
+
+{ Parse one .mmf file's text into recipes. }
 function ImportMealMasterText(const Text: string): TRecipeArray;
+
+{ Append every *.mmf (any case) under a file or directory path to List.
+  A path that does not exist is silently ignored. }
+procedure CollectMMFiles(const Path: string; List: TStrings);
+
+{ Parse the given .mmf files and write their recipes into Lib (dedup by
+  source id: filename, or filename#<title-slug> for multi-recipe files).
+  Returns the number imported; sets Updated to how many overwrote a file. }
+function ImportMealMasterFiles(Files: TStrings; Lib: TLibrary;
+  out Updated: Integer; Progress: TMMProgress = nil): Integer;
 
 implementation
 
 uses
-  SysUtils, Classes;
+  SysUtils;
 
 const
   LF = #10;
@@ -382,6 +396,75 @@ begin
   finally
     Block.Free;
     Lines.Free;
+  end;
+end;
+
+{ --- file-level import --- }
+
+procedure CollectMMFiles(const Path: string; List: TStrings);
+var
+  Info: TSearchRec;
+  dir: string;
+begin
+  if DirectoryExists(Path) then
+  begin
+    dir := IncludeTrailingPathDelimiter(Path);
+    if FindFirst(dir + '*', faAnyFile, Info) = 0 then
+    begin
+      repeat
+        if (Info.Attr and faDirectory) = 0 then
+          if LowerCase(ExtractFileExt(Info.Name)) = '.mmf' then
+            List.Add(dir + Info.Name);
+      until FindNext(Info) <> 0;
+      FindClose(Info);
+    end;
+  end
+  else if FileExists(Path) then
+    List.Add(Path);
+end;
+
+function ReadFileText(const FileName: string): string;
+var
+  SL: TStringList;
+begin
+  SL := TStringList.Create;
+  try
+    SL.LoadFromFile(FileName);
+    Result := SL.Text;
+  finally
+    SL.Free;
+  end;
+end;
+
+function ImportMealMasterFiles(Files: TStrings; Lib: TLibrary;
+  out Updated: Integer; Progress: TMMProgress): Integer;
+var
+  today, txt, base: string;
+  i, ri: Integer;
+  recipes: TRecipeArray;
+  wasUpdate: Boolean;
+begin
+  Result := 0;
+  Updated := 0;
+  today := FormatDateTime('yyyy-mm-dd', Now);
+  for i := 0 to Files.Count - 1 do
+  begin
+    txt := ReadFileText(Files[i]);
+    recipes := ImportMealMasterText(txt);
+    base := ExtractFileName(Files[i]);
+    for ri := 0 to High(recipes) do
+    begin
+      if Trim(recipes[ri].Title) = '' then recipes[ri].Title := 'Untitled';
+      if Length(recipes) > 1 then
+        recipes[ri].SourceId := base + '#' + Slugify(recipes[ri].Title)
+      else
+        recipes[ri].SourceId := base;
+      recipes[ri].Imported := today;
+      Lib.AddOrUpdate(recipes[ri], wasUpdate);
+      if wasUpdate then Inc(Updated);
+      Inc(Result);
+      if Assigned(Progress) then Progress(recipes[ri].Title, wasUpdate);
+    end;
   end;
 end;
 

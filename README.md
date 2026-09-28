@@ -73,6 +73,7 @@ Run `tiecook2` with no arguments.
 - Up/Down/PgUp/PgDn/Home/End to move; the mouse selects and the wheel scrolls.
 - Enter (or click the selected recipe) opens it.
 - F4 edits the highlighted recipe, F8 deletes it (with a confirmation).
+- F5 imports Meal-Master `.mmf` files: type a file or folder path when prompted.
 - F10 quits.
 
 **Recipe view**

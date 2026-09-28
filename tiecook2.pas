@@ -115,45 +115,6 @@ begin
   end;
 end;
 
-{ --- file gathering for import --- }
-
-procedure CollectMMF(const Path: string; List: TStrings);
-var
-  Info: TSearchRec;
-  dir: string;
-begin
-  if DirectoryExists(Path) then
-  begin
-    dir := IncludeTrailingPathDelimiter(Path);
-    if FindFirst(dir + '*', faAnyFile, Info) = 0 then
-    begin
-      repeat
-        if (Info.Attr and faDirectory) = 0 then
-          if LowerCase(ExtractFileExt(Info.Name)) = '.mmf' then
-            List.Add(dir + Info.Name);
-      until FindNext(Info) <> 0;
-      FindClose(Info);
-    end;
-  end
-  else if FileExists(Path) then
-    List.Add(Path)
-  else
-    WriteLn(StdErr, 'tiecook2: no such file or directory: ', Path);
-end;
-
-function ReadFileText(const FileName: string): string;
-var
-  SL: TStringList;
-begin
-  SL := TStringList.Create;
-  try
-    SL.LoadFromFile(FileName);
-    Result := SL.Text;
-  finally
-    SL.Free;
-  end;
-end;
-
 { --- commands --- }
 
 procedure DoList(Args: TStrings);
@@ -213,49 +174,29 @@ begin
   end;
 end;
 
+procedure MMProgress(const Title: string; WasUpdate: Boolean);
+begin
+  if WasUpdate then Write('  update  ') else Write('  new     ');
+  WriteLn(Title);
+end;
+
 procedure DoImportMealMaster(Args: TStrings);
 var
   Lib: TLibrary;
   Files: TStringList;
-  today, txt, slug, base: string;
-  i, ri, total, updated: Integer;
-  recipes: TRecipeArray;
-  wasUpdate: Boolean;
+  i, total, updated: Integer;
 begin
   Lib := OpenLibrary(PopLibrary(Args));
   Files := TStringList.Create;
   try
     if Args.Count = 0 then begin Usage; Halt(1); end;
     for i := 0 to Args.Count - 1 do
-      CollectMMF(Args[i], Files);
+      CollectMMFiles(Args[i], Files);
     if Files.Count = 0 then
     begin
       WriteLn(StdErr, 'tiecook2: no .mmf files found'); Halt(1);
     end;
-
-    today := FormatDateTime('yyyy-mm-dd', Now);
-    total := 0; updated := 0;
-    for i := 0 to Files.Count - 1 do
-    begin
-      txt := ReadFileText(Files[i]);
-      recipes := ImportMealMasterText(txt);
-      base := ExtractFileName(Files[i]);
-      for ri := 0 to High(recipes) do
-      begin
-        if Trim(recipes[ri].Title) = '' then recipes[ri].Title := 'Untitled';
-        if Length(recipes) > 1 then
-          recipes[ri].SourceId := base + '#' + Slugify(recipes[ri].Title)
-        else
-          recipes[ri].SourceId := base;
-        recipes[ri].Imported := today;
-
-        slug := Lib.AddOrUpdate(recipes[ri], wasUpdate);
-        if wasUpdate then Inc(updated);
-        WriteLn('  ', BoolToStr(wasUpdate, 'update', 'new   '), '  ',
-                recipes[ri].Title, '  ->  ', slug, '.txt');
-        Inc(total);
-      end;
-    end;
+    total := ImportMealMasterFiles(Files, Lib, updated, @MMProgress);
     WriteLn(Format('Imported %d recipe(s) (%d updated) from %d file(s) into %s',
                    [total, updated, Files.Count, Lib.Dir]));
   finally
