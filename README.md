@@ -11,12 +11,19 @@ cross-compiles to Windows.
 
 ```
 make            # native binary: ./tiecook2
-make win        # Windows binary: tiecook2.exe (win64, no extra toolchain)
+make win        # Windows binary: tiecook2.exe + OpenSSL DLLs
 make test       # run the unit tests
 ```
 
 Requires FPC 3.2.2+ with the standard units (`video`, `keyboard`, `mouse`,
-`Process`, `IniFiles`).
+`Process`, `IniFiles`, `fphttpclient`, `opensslsockets`, `fpjson`).
+
+The Tandoor importer links OpenSSL, so the native build needs OpenSSL
+installed, and `make win` copies three OpenSSL 1.1 DLLs
+(`libssl-1_1-x64.dll`, `libcrypto-1_1-x64.dll`, `libssp-0.dll`) beside
+`tiecook2.exe` — ship all four files together. Those DLLs come from a
+mingw-w64 OpenSSL 1.1 package; adjust `MINGW_SYSROOT` in the Makefile if
+yours lives elsewhere.
 
 ## Commands
 
@@ -25,6 +32,7 @@ tiecook2                                   browse the library (read-only TUI)
 tiecook2 list [--library DIR]              list every recipe
 tiecook2 search [--library DIR] <words>    search titles/keywords/text
 tiecook2 import mealmaster [--library DIR] <file|dir>...
+tiecook2 import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]
 tiecook2 export html [--library DIR] <output-dir>
 ```
 
@@ -39,6 +47,12 @@ Amounts become fractions (`0.50` → `1/2`), unit codes expand (`ts` → `tsp`),
 categories become keywords, and the directions become numbered steps.
 Re-importing the same source updates the existing file instead of duplicating
 it.
+
+`import tandoor` pulls recipes from a [Tandoor](https://tandoor.dev) instance
+over its REST API, downloading each recipe's photo. Give it `--url` and
+`--token` (a read-scope API token), or set them in the `[tandoor]` section of
+the config. `--limit N` imports only the first N recipes (handy for a first
+run). Re-importing updates recipes in place by their Tandoor id.
 
 ### Export
 
@@ -85,6 +99,11 @@ anything after `key=` (including a trailing `; ...`) as part of the value.
 [library]
 ; recipe library location (blank = default data dir)
 dir=
+
+[tandoor]
+; used by "import tandoor"; a read-scope API token
+url=
+token=
 
 [site]
 ; used by "export html"

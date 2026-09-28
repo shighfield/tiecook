@@ -12,7 +12,8 @@ program tiecook2;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, Classes, urecipe, uconfig, ulibrary, uimp_mealmaster, uexport_html, uui;
+  SysUtils, Classes, urecipe, uconfig, ulibrary, uimp_mealmaster, uexport_html,
+  uapi, uimp_tandoor, uui;
 
 procedure Usage;
 begin
@@ -20,6 +21,7 @@ begin
   WriteLn('  tiecook2 list [--library DIR]');
   WriteLn('  tiecook2 search [--library DIR] <words>');
   WriteLn('  tiecook2 import mealmaster [--library DIR] <file|dir>...');
+  WriteLn('  tiecook2 import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]');
   WriteLn('  tiecook2 export html [--library DIR] <output-dir>');
 end;
 
@@ -47,6 +49,27 @@ begin
   i := 0;
   while i < Args.Count do
     if (Args[i] = '--library') or (Args[i] = '--out') then
+    begin
+      if i + 1 < Args.Count then
+      begin
+        Result := Args[i + 1];
+        Args.Delete(i + 1);
+      end;
+      Args.Delete(i);
+    end
+    else
+      Inc(i);
+end;
+
+{ Pull "--name VALUE" out of Args, returning VALUE or ''. }
+function PopOption(Args: TStrings; const Name: string): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  i := 0;
+  while i < Args.Count do
+    if Args[i] = Name then
     begin
       if i + 1 < Args.Count then
       begin
@@ -241,6 +264,73 @@ begin
   end;
 end;
 
+procedure TandoorProgress(const Title: string; WasUpdate: Boolean);
+begin
+  if WasUpdate then Write('  update  ') else Write('  new     ');
+  WriteLn(Title);
+end;
+
+procedure DoImportTandoor(Args: TStrings);
+var
+  Cfg: TConfig;
+  Lib: TLibrary;
+  Client: TTandoorClient;
+  libOverride, url, token, limitStr: string;
+  n, updated, failed, limit: Integer;
+begin
+  libOverride := PopLibrary(Args);
+  url := PopOption(Args, '--url');
+  token := PopOption(Args, '--token');
+  limitStr := PopOption(Args, '--limit');
+  limit := StrToIntDef(limitStr, 0);
+  if Args.Count <> 0 then begin Usage; Halt(1); end;
+
+  Cfg := LoadOrSeedConfig;
+  try
+    if libOverride <> '' then Cfg.LibraryDir := libOverride;
+    if url <> '' then Cfg.TandoorUrl := url;
+    if token <> '' then Cfg.TandoorToken := token;
+    Cfg.ResolveTandoorFromTiecook;         { fall back to tiecook's config }
+    while (Cfg.TandoorUrl <> '') and (Cfg.TandoorUrl[Length(Cfg.TandoorUrl)] = '/') do
+      Delete(Cfg.TandoorUrl, Length(Cfg.TandoorUrl), 1);
+
+    if (Trim(Cfg.TandoorUrl) = '') or (Trim(Cfg.TandoorToken) = '') then
+    begin
+      WriteLn(StdErr, 'tiecook2: no Tandoor url/token. Set [tandoor] in ',
+              Cfg.Path, ', pass --url/--token, or configure tiecook.');
+      Halt(1);
+    end;
+
+    Lib := TLibrary.Create(Cfg.LibraryDir);
+    try
+      ForceDirectories(Cfg.LibraryDir);
+      Lib.Load;
+      Client := TTandoorClient.Create(Cfg.TandoorUrl, Cfg.TandoorToken);
+      try
+        try
+          WriteLn('Importing from ', Cfg.TandoorUrl, ' ...');
+          n := ImportTandoor(Client, Lib, True, updated, failed, @TandoorProgress, limit);
+          WriteLn(Format('Imported %d recipe(s) (%d updated, %d failed) into %s',
+                         [n, updated, failed, Cfg.LibraryDir]));
+          if failed > 0 then ExitCode := 1;
+        except
+          on E: ETandoorError do
+          begin
+            WriteLn(StdErr, 'tiecook2: Tandoor error: ', E.Message);
+            Halt(1);
+          end;
+        end;
+      finally
+        Client.Free;
+      end;
+    finally
+      Lib.Free;
+    end;
+  finally
+    Cfg.Free;
+  end;
+end;
+
 procedure DoExportHtml(Args: TStrings);
 var
   libOverride, outDir: string;
@@ -328,6 +418,8 @@ begin
       for i := 3 to ParamCount do Args.Add(ParamStr(i));
       if src = 'mealmaster' then
         DoImportMealMaster(Args)
+      else if src = 'tandoor' then
+        DoImportTandoor(Args)
       else
       begin
         WriteLn(StdErr, 'tiecook2: unknown or missing import source');
