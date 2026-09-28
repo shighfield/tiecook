@@ -45,9 +45,13 @@ type
     BackgroundImage: string;
     PersonalKeyword: string;
     FavoriteKeyword: string;
+    Editor: string;
     constructor Create(const APath: string = '');
     procedure Load;
     procedure Save;
+    { The editor command for `e`/edit: config editor, else $VISUAL, else
+      $EDITOR, else a per-OS default (nano / notepad). }
+    function EditorCommand: string;
     { If TandoorUrl/TandoorToken are still empty, fill them from the existing
       tiecook config (~/.config/tiecook/config, keys base_url + token). }
     procedure ResolveTandoorFromTiecook;
@@ -132,6 +136,18 @@ begin
   BackgroundImage := '';
   PersonalKeyword := '';         { empty -> no personal section (generic default) }
   FavoriteKeyword := 'Favorite';
+  Editor := '';
+end;
+
+function TConfig.EditorCommand: string;
+begin
+  Result := Trim(Editor);
+  if Result <> '' then Exit;
+  Result := Trim(GetEnvironmentVariable('VISUAL'));
+  if Result <> '' then Exit;
+  Result := Trim(GetEnvironmentVariable('EDITOR'));
+  if Result <> '' then Exit;
+  {$ifdef windows}Result := 'notepad';{$else}Result := 'nano';{$endif}
 end;
 
 procedure TConfig.Load;
@@ -152,6 +168,7 @@ begin
     BackgroundImage := Ini.ReadString('site', 'background_image', BackgroundImage);
     PersonalKeyword := Ini.ReadString('site', 'personal_keyword', PersonalKeyword);
     FavoriteKeyword := Ini.ReadString('site', 'favorite_keyword', FavoriteKeyword);
+    Editor := Ini.ReadString('editor', 'command', Editor);
   finally
     Ini.Free;
   end;
@@ -200,6 +217,7 @@ begin
     Ini.WriteString('site', 'background_image', BackgroundImage);
     Ini.WriteString('site', 'personal_keyword', PersonalKeyword);
     Ini.WriteString('site', 'favorite_keyword', FavoriteKeyword);
+    Ini.WriteString('editor', 'command', Editor);
     Ini.UpdateFile;
   finally
     Ini.Free;
