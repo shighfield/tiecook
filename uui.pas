@@ -18,7 +18,7 @@ implementation
 
 uses
   video, keyboard, mouse, SysUtils, Classes, Process,
-  urecipe, urender, uopen;
+  urecipe, urender, uopen, uimp_mealmaster;
 
 const
   { attribute = foreground or (background shl 4) }
@@ -59,10 +59,13 @@ type
     procedure DrawDetail;
     procedure Draw;
     function ConfirmYN(const Msg: string): Boolean;
+    function PromptText(const Prompt: string; out Value: string): Boolean;
+    procedure Flash(const Msg: string);
     procedure TeardownIO;
     procedure InitIO;
     procedure EditIndex(LibIdx: Integer);
     procedure DeleteIndex(LibIdx: Integer);
+    procedure ImportMMInteractive;
     procedure HandleKey(K: TKeyEvent);
     procedure HandleMouse(const M: TMouseEvent);
   public
@@ -210,7 +213,7 @@ begin
   { status bar }
   FillRow(ScreenHeight - 1, AttrStatus);
   PutStr(0, ScreenHeight - 1,
-    Format(' %d/%d  Enter open  F4 edit  F8 del  type=search  F10/^Q quit',
+    Format(' %d/%d  Enter open  F4 edit  F5 import  F8 del  type=search  F10 quit',
            [Length(FFiltered), FLib.Count]), AttrStatus);
 end;
 
@@ -326,6 +329,77 @@ begin
   FDirty := True;
 end;
 
+{ A one-line text input on the status row. Enter confirms (empty = cancel),
+  Backspace edits, Esc cancels (when it arrives). Returns whether confirmed. }
+function TBrowser.PromptText(const Prompt: string; out Value: string): Boolean;
+var
+  K: TKeyEvent;
+  kind: Byte;
+  ch: Char;
+  done: Boolean;
+begin
+  Value := '';
+  Result := False;
+  done := False;
+  repeat
+    FillRow(ScreenHeight - 1, AttrSel);
+    PutStr(1, ScreenHeight - 1, Prompt + Value + '_', AttrSel);
+    UpdateScreen(True);
+    K := TranslateKeyEvent(GetKeyEvent);
+    kind := GetKeyEventFlags(K) and $03;
+    if (kind = kbFnKey) or (kind = kbPhys) then Continue;   { ignore arrows/F-keys }
+    ch := GetKeyEventChar(K);
+    case ch of
+      #13: begin done := True; Result := Trim(Value) <> ''; end;
+      #27: done := True;                                    { Esc: cancel }
+      #8:  if Value <> '' then Delete(Value, Length(Value), 1);
+      #32..#126: Value := Value + ch;
+    end;
+  until done;
+  FForce := True;
+  FDirty := True;
+end;
+
+{ Show a message on the status row and wait for a keypress. }
+procedure TBrowser.Flash(const Msg: string);
+begin
+  FillRow(ScreenHeight - 1, AttrSel);
+  PutStr(1, ScreenHeight - 1, Msg + '   (press a key)', AttrSel);
+  UpdateScreen(True);
+  TranslateKeyEvent(GetKeyEvent);
+  FForce := True;
+  FDirty := True;
+end;
+
+{ Prompt for a Meal-Master file/folder, import it into the live library, and
+  refresh the list. }
+procedure TBrowser.ImportMMInteractive;
+var
+  path: string;
+  Files: TStringList;
+  total, updated: Integer;
+begin
+  if not PromptText('Import Meal-Master file or folder: ', path) then Exit;
+  path := Trim(path);
+  { expand a leading ~/ to the home directory }
+  if (Length(path) >= 2) and (path[1] = '~') and (path[2] = '/') then
+    path := IncludeTrailingPathDelimiter(GetUserDir) + Copy(path, 3, Length(path));
+  Files := TStringList.Create;
+  try
+    CollectMMFiles(path, Files);
+    if Files.Count = 0 then
+    begin
+      Flash('No .mmf files found at: ' + path);
+      Exit;
+    end;
+    total := ImportMealMasterFiles(Files, FLib, updated);
+    Refilter(False);
+    Flash(Format('Imported %d recipe(s) (%d updated)', [total, updated]));
+  finally
+    Files.Free;
+  end;
+end;
+
 { Go back from detail to list, or clear the search when on the list. This is
   the "cancel" action, reachable by Backspace (on an empty query) and by the
   best-effort Esc code. }
@@ -368,6 +442,7 @@ begin
         kbdHome:  MoveSel(-Length(FFiltered));
         kbdEnd:   MoveSel(Length(FFiltered));
         kbdF4:    if Length(FFiltered) > 0 then EditIndex(FFiltered[FSel]);
+        kbdF5:    ImportMMInteractive;
         kbdF8:    if Length(FFiltered) > 0 then DeleteIndex(FFiltered[FSel]);
       end
     else
