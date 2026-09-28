@@ -34,6 +34,11 @@ type
 { Parse one .mmf file's text into recipes. }
 function ImportMealMasterText(const Text: string): TRecipeArray;
 
+{ Strip trailing "Recipe by / Recipe FROM: <url> / Source:" attribution steps,
+  lifting any URL into source-url. Applied automatically on import; exposed for
+  cleaning already-imported recipes. }
+procedure CleanAttribution(var R: TRecipe);
+
 { Append every *.mmf (any case) under a file or directory path to List.
   A path that does not exist is silently ignored. }
 procedure CollectMMFiles(const Path: string; List: TStrings);
@@ -287,6 +292,76 @@ begin
   end;
 end;
 
+function StartsWith(const Prefix, S: string): Boolean;
+begin
+  Result := LowerCase(Copy(S, 1, Length(Prefix))) = LowerCase(Prefix);
+end;
+
+{ Pull a URL out of a line, repairing a Meal-Master wrap-space and stripping
+  <> brackets and trailing punctuation. Only call on a line already known to be
+  attribution, since it removes internal spaces from the URL portion. }
+function ExtractUrlFromText(const S: string; out Url: string): Boolean;
+var
+  p: Integer;
+  low, tok: string;
+begin
+  Url := '';
+  Result := False;
+  low := LowerCase(S);
+  p := Pos('http://', low);
+  if p = 0 then p := Pos('https://', low);
+  if p = 0 then p := Pos('www.', low);
+  if p = 0 then Exit;
+  tok := Copy(S, p, Length(S));
+  tok := StringReplace(tok, ' ', '', [rfReplaceAll]);
+  tok := StringReplace(tok, #9, '', [rfReplaceAll]);
+  while (tok <> '') and (tok[Length(tok)] in ['>', ')', '.', ',', '"', '''', ']']) do
+    Delete(tok, Length(tok), 1);
+  while (tok <> '') and (tok[1] in ['<', '(', '"', '''', '[']) do
+    Delete(tok, 1, 1);
+  if StartsWith('www.', tok) then tok := 'https://' + tok;
+  Url := tok;
+  Result := Url <> '';
+end;
+
+{ Is this step a trailing attribution line (source/author) rather than an
+  instruction? Sets Url when it carries one. }
+function IsAttributionStep(const StepText: string; out Url: string): Boolean;
+var
+  t: string;
+begin
+  t := Trim(StepText);
+  Result := ExtractUrlFromText(t, Url)
+    or StartsWith('recipe by', t)
+    or StartsWith('recipe from', t)
+    or StartsWith('source:', t)
+    or StartsWith('adapted from', t)
+    or StartsWith('from:', t)
+    or StartsWith('by:', t);
+end;
+
+{ Strip trailing attribution steps (Meal-Master often appends "Recipe by ..."
+  and "Recipe FROM: <url>"), lifting a URL into source-url. Stops at the first
+  real step, so instructions in the middle are never touched. }
+procedure CleanAttribution(var R: TRecipe);
+var
+  newLen: Integer;
+  url: string;
+begin
+  newLen := Length(R.Steps);
+  while newLen > 0 do
+  begin
+    if IsAttributionStep(R.Steps[newLen - 1], url) then
+    begin
+      if (url <> '') and (Trim(R.SourceUrl) = '') then R.SourceUrl := url;
+      Dec(newLen);
+    end
+    else
+      Break;
+  end;
+  SetLength(R.Steps, newLen);
+end;
+
 function ParseBlock(Block: TStringList): TRecipe;
 var
   i, ingStart: Integer;
@@ -346,6 +421,8 @@ begin
     Inc(i);
   end;
   if para <> '' then AddStep(Result, para);
+
+  CleanAttribution(Result);
 end;
 
 function ImportMealMasterText(const Text: string): TRecipeArray;

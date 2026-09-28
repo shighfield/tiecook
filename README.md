@@ -44,9 +44,11 @@ value from the config file is used.
 `import mealmaster` reads Meal-Master `.mmf` files (a single file may hold
 many recipes) and writes one plain-text file per recipe into the library.
 Amounts become fractions (`0.50` → `1/2`), unit codes expand (`ts` → `tsp`),
-categories become keywords, and the directions become numbered steps.
-Re-importing the same source updates the existing file instead of duplicating
-it.
+categories become keywords, and the directions become numbered steps. Trailing
+attribution lines (`Recipe by …`, `Recipe FROM: <url>`, `Source: …`) are
+dropped from the steps, and any source URL is captured as the recipe's source
+link. Re-importing the same source updates the existing file instead of
+duplicating it.
 
 `import tandoor` pulls recipes from a [Tandoor](https://tandoor.dev) instance
 over its REST API, downloading each recipe's photo. Give it `--url` and

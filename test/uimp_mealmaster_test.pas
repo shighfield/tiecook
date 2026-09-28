@@ -96,6 +96,29 @@ begin
     Check(Length(R[1].Steps) = 1, 'recipe 2 step count');
   end;
 
+  { trailing attribution: URL -> source-url, author + url steps dropped }
+  R := ImportMealMasterText(
+    'MMMMM----- Recipe via Meal-Master (tm) v8.06' + CRLF + CRLF +
+    '      Title: Attribution Test' + CRLF +
+    ' Categories: Test' + CRLF +
+    '      Yield: 4 Servings' + CRLF + CRLF +
+    '   1.00 c  Water' + CRLF + CRLF +
+    '  Boil the water.' + CRLF + CRLF +
+    '  Serve hot.' + CRLF + CRLF +
+    '  Recipe by Jane Cook' + CRLF + CRLF +
+    '  Recipe FROM: <https://www.example.com/ soup-recipe/>' + CRLF +
+    'MMMMM' + CRLF);
+  if Length(R) = 1 then
+  begin
+    Check(Length(R[0].Steps) = 2, 'attribution steps dropped, real steps kept');
+    Check((Length(R[0].Steps) = 2) and (R[0].Steps[1] = 'Serve hot.'),
+          'last real step is preserved');
+    Check(R[0].SourceUrl = 'https://www.example.com/soup-recipe/',
+          'URL lifted to source-url with wrap-space repaired');
+  end
+  else
+    Check(False, 'attribution test recipe parsed');
+
   { slug helper }
   Check(Slugify('Easy Chicken Teriyaki') = 'easy-chicken-teriyaki', 'slugify spaces');
   Check(Slugify('GF Quiche  & Pie Crust!') = 'gf-quiche-pie-crust', 'slugify punctuation');
