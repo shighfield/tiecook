@@ -46,6 +46,7 @@ type
     PersonalKeyword: string;
     FavoriteKeyword: string;
     Editor: string;
+    Splash: Boolean;       { show the title screen on launch }
     constructor Create(const APath: string = '');
     procedure Load;
     procedure Save;
@@ -137,6 +138,7 @@ begin
   PersonalKeyword := '';         { empty -> no personal section (generic default) }
   FavoriteKeyword := 'Favorite';
   Editor := '';
+  Splash := True;
 end;
 
 function TConfig.EditorCommand: string;
@@ -169,6 +171,7 @@ begin
     PersonalKeyword := Ini.ReadString('site', 'personal_keyword', PersonalKeyword);
     FavoriteKeyword := Ini.ReadString('site', 'favorite_keyword', FavoriteKeyword);
     Editor := Ini.ReadString('editor', 'command', Editor);
+    Splash := Ini.ReadBool('ui', 'splash', Splash);
   finally
     Ini.Free;
   end;
@@ -218,6 +221,7 @@ begin
     Ini.WriteString('site', 'personal_keyword', PersonalKeyword);
     Ini.WriteString('site', 'favorite_keyword', FavoriteKeyword);
     Ini.WriteString('editor', 'command', Editor);
+    Ini.WriteBool('ui', 'splash', Splash);
     Ini.UpdateFile;
   finally
     Ini.Free;
