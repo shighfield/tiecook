@@ -274,6 +274,40 @@ begin
   Check((outp = 'Just cook it.') and (url = ''), 'text without a source section is unchanged');
 end;
 
+procedure TestEditHelpers;
+var
+  R, C: TRecipe;
+begin
+  InitRecipe(R);
+  R.Title := 'X';
+  AddIngredient(R, 'a'); AddIngredient(R, 'b'); AddIngredient(R, 'c');
+  AddStep(R, 's1'); AddStep(R, 's2');
+
+  { CopyRecipe is an independent deep copy }
+  C := CopyRecipe(R);
+  C.Ingredients[0].Text := 'ZZZ';
+  Check(R.Ingredients[0].Text = 'a', 'CopyRecipe: editing the copy leaves the original');
+
+  SetKeywords(R, 'One, Two ,Three');
+  Check((Length(R.Keywords) = 3) and (R.Keywords[1] = 'Two'), 'SetKeywords parses and trims');
+
+  InsertIngredient(R, 1, 'x');
+  Check((Length(R.Ingredients) = 4) and (R.Ingredients[1].Text = 'x'), 'InsertIngredient at pos');
+  DeleteIngredient(R, 1);
+  Check((Length(R.Ingredients) = 3) and (R.Ingredients[1].Text = 'b'), 'DeleteIngredient');
+  MoveIngredient(R, 0, 1);
+  Check((R.Ingredients[0].Text = 'b') and (R.Ingredients[1].Text = 'a'), 'MoveIngredient swaps');
+  MoveIngredient(R, 0, -1);
+  Check(R.Ingredients[0].Text = 'b', 'MoveIngredient out of range is a no-op');
+
+  InsertStep(R, 0, 's0');
+  Check((Length(R.Steps) = 3) and (R.Steps[0] = 's0'), 'InsertStep at front');
+  MoveStep(R, 0, 1);
+  Check(R.Steps[0] = 's1', 'MoveStep down');
+  DeleteStep(R, 0);
+  Check((Length(R.Steps) = 2) and (R.Steps[0] = 's0'), 'DeleteStep');
+end;
+
 begin
   TestRoundTrip;
   TestParseAuthored;
@@ -281,6 +315,7 @@ begin
   TestMultilineSteps;
   TestCrlfContinuation;
   TestReflow;
+  TestEditHelpers;
   TestNormalization;
   TestUtf8;
   TestStripSource;

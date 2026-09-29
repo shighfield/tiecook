@@ -71,6 +71,18 @@ procedure AddKeyword(var R: TRecipe; const K: string);
 procedure AddIngredient(var R: TRecipe; const Text: string; IsSection: Boolean = False);
 procedure AddStep(var R: TRecipe; const Text: string);
 
+{ --- structured-editing helpers --- }
+{ Independent deep copy (so an editor working-copy doesn't alias the original). }
+function CopyRecipe(const R: TRecipe): TRecipe;
+{ Replace the keyword list from a comma-separated string. }
+procedure SetKeywords(var R: TRecipe; const Csv: string);
+procedure InsertIngredient(var R: TRecipe; Pos: Integer; const Text: string; IsSection: Boolean = False);
+procedure DeleteIngredient(var R: TRecipe; Index: Integer);
+procedure MoveIngredient(var R: TRecipe; Index, Delta: Integer);
+procedure InsertStep(var R: TRecipe; Pos: Integer; const Text: string);
+procedure DeleteStep(var R: TRecipe; Index: Integer);
+procedure MoveStep(var R: TRecipe; Index, Delta: Integer);
+
 function RecipeToText(const R: TRecipe): string;
 function RecipeFromText(const S: string): TRecipe;
 
@@ -134,6 +146,105 @@ procedure AddStep(var R: TRecipe; const Text: string);
 begin
   SetLength(R.Steps, Length(R.Steps) + 1);
   R.Steps[High(R.Steps)] := Text;
+end;
+
+{ --- structured-editing helpers --- }
+
+function CopyRecipe(const R: TRecipe): TRecipe;
+begin
+  Result := R;                       { copies scalars; arrays alias until... }
+  Result.Keywords := Copy(R.Keywords);        { ...forced unique here }
+  Result.Ingredients := Copy(R.Ingredients);
+  Result.Steps := Copy(R.Steps);
+end;
+
+procedure SetKeywords(var R: TRecipe; const Csv: string);
+var
+  parts: TStringList;
+  i: Integer;
+begin
+  SetLength(R.Keywords, 0);
+  parts := TStringList.Create;
+  try
+    parts.StrictDelimiter := True;
+    parts.Delimiter := ',';
+    parts.DelimitedText := Csv;
+    for i := 0 to parts.Count - 1 do
+      AddKeyword(R, parts[i]);
+  finally
+    parts.Free;
+  end;
+end;
+
+procedure InsertIngredient(var R: TRecipe; Pos: Integer; const Text: string; IsSection: Boolean);
+var
+  i: Integer;
+begin
+  if Pos < 0 then Pos := 0;
+  if Pos > Length(R.Ingredients) then Pos := Length(R.Ingredients);
+  SetLength(R.Ingredients, Length(R.Ingredients) + 1);
+  for i := High(R.Ingredients) downto Pos + 1 do
+    R.Ingredients[i] := R.Ingredients[i - 1];
+  R.Ingredients[Pos].Text := Text;
+  R.Ingredients[Pos].IsSection := IsSection;
+end;
+
+procedure DeleteIngredient(var R: TRecipe; Index: Integer);
+var
+  i: Integer;
+begin
+  if (Index < 0) or (Index > High(R.Ingredients)) then Exit;
+  for i := Index to High(R.Ingredients) - 1 do
+    R.Ingredients[i] := R.Ingredients[i + 1];
+  SetLength(R.Ingredients, Length(R.Ingredients) - 1);
+end;
+
+procedure MoveIngredient(var R: TRecipe; Index, Delta: Integer);
+var
+  j: Integer;
+  tmp: TIngredient;
+begin
+  j := Index + Delta;
+  if (Index < 0) or (Index > High(R.Ingredients)) or
+     (j < 0) or (j > High(R.Ingredients)) then Exit;
+  tmp := R.Ingredients[Index];
+  R.Ingredients[Index] := R.Ingredients[j];
+  R.Ingredients[j] := tmp;
+end;
+
+procedure InsertStep(var R: TRecipe; Pos: Integer; const Text: string);
+var
+  i: Integer;
+begin
+  if Pos < 0 then Pos := 0;
+  if Pos > Length(R.Steps) then Pos := Length(R.Steps);
+  SetLength(R.Steps, Length(R.Steps) + 1);
+  for i := High(R.Steps) downto Pos + 1 do
+    R.Steps[i] := R.Steps[i - 1];
+  R.Steps[Pos] := Text;
+end;
+
+procedure DeleteStep(var R: TRecipe; Index: Integer);
+var
+  i: Integer;
+begin
+  if (Index < 0) or (Index > High(R.Steps)) then Exit;
+  for i := Index to High(R.Steps) - 1 do
+    R.Steps[i] := R.Steps[i + 1];
+  SetLength(R.Steps, Length(R.Steps) - 1);
+end;
+
+procedure MoveStep(var R: TRecipe; Index, Delta: Integer);
+var
+  j: Integer;
+  tmp: string;
+begin
+  j := Index + Delta;
+  if (Index < 0) or (Index > High(R.Steps)) or
+     (j < 0) or (j > High(R.Steps)) then Exit;
+  tmp := R.Steps[Index];
+  R.Steps[Index] := R.Steps[j];
+  R.Steps[j] := tmp;
 end;
 
 { --- writing --- }

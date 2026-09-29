@@ -30,7 +30,15 @@ const
   AttrHeading = 14;                { yellow on black }
 
 type
-  TMode = (mList, mDetail);
+  TMode = (mList, mDetail, mEdit);
+
+  { rows of the structured editor; headers are not selectable }
+  TEditRowKind = (erTitle, erKeywords, erServings, erTime, erSource, erDesc,
+                  erIngHdr, erIng, erIngAdd, erStepHdr, erStep, erStepAdd);
+  TEditRow = record
+    Kind: TEditRowKind;
+    Idx: Integer;           { item index for erIng / erStep }
+  end;
 
   TBrowser = class
   private
@@ -48,6 +56,12 @@ type
     FQuit: Boolean;
     FDirty: Boolean;
     FForce: Boolean;       { next repaint must resend the whole screen }
+    FEdit: TRecipe;        { working copy in the structured editor }
+    FEditIdx: Integer;     { library index being edited }
+    FEditRow: Integer;     { current row in FEditRows }
+    FEditTop: Integer;     { first visible editor row }
+    FEditRows: array of TEditRow;
+    FEditReturn: TMode;    { mode to return to on save/cancel }
     function ListRows: Integer;
     function DetailRows: Integer;
     procedure Refilter(ResetSel: Boolean);
@@ -60,11 +74,20 @@ type
     procedure Draw;
     procedure ShowTitle;
     function ConfirmYN(const Msg: string): Boolean;
-    function PromptText(const Prompt: string; out Value: string): Boolean;
+    function PromptText(const Prompt: string; out Value: string;
+      const Initial: string = ''): Boolean;
     procedure Flash(const Msg: string);
     procedure TeardownIO;
     procedure InitIO;
-    procedure EditIndex(LibIdx: Integer);
+    procedure RunEditorFile(const FileName: string);
+    procedure EditProseText(var S: string);
+    procedure EnterEdit(LibIdx: Integer);
+    procedure BuildEditRows;
+    function EditRows: Integer;
+    procedure EditMove(Delta: Integer);
+    procedure DrawEdit;
+    procedure HandleEditKey(K: TKeyEvent);
+    procedure SaveEdit;
     procedure DeleteIndex(LibIdx: Integer);
     procedure ImportMMInteractive;
     procedure HandleKey(K: TKeyEvent);
@@ -259,7 +282,11 @@ end;
 
 procedure TBrowser.Draw;
 begin
-  if FMode = mList then DrawList else DrawDetail;
+  case FMode of
+    mList:   DrawList;
+    mDetail: DrawDetail;
+    mEdit:   DrawEdit;
+  end;
   UpdateScreen(FForce);
   FForce := False;
   FDirty := False;
@@ -327,15 +354,36 @@ end;
 
 { Open the recipe file in the external editor. Tears the console down so the
   editor owns it, waits, then re-initialises and reloads the recipe. }
-procedure TBrowser.EditIndex(LibIdx: Integer);
+{ Join keywords for display. }
+function KwJoin(const R: TRecipe): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(R.Keywords) do
+  begin
+    if i > 0 then Result := Result + ', ';
+    Result := Result + R.Keywords[i];
+  end;
+end;
+
+{ First line of a possibly multi-paragraph value, with an ellipsis if more. }
+function FirstLine(const S: string): string;
+var
+  p: Integer;
+begin
+  Result := S;
+  p := Pos(#10, Result);
+  if p > 0 then Result := Copy(Result, 1, p - 1) + ' ...';
+end;
+
+{ Run the configured editor on a file, tearing down the console first. }
+procedure TBrowser.RunEditorFile(const FileName: string);
 var
   P: TProcess;
   parts: TStringList;
-  fn: string;
   i: Integer;
 begin
-  if (LibIdx < 0) or (LibIdx >= FLib.Count) then Exit;
-  fn := FLib.FilePath(LibIdx);
   TeardownIO;
   try
     P := TProcess.Create(nil);
@@ -348,8 +396,8 @@ begin
       P.Executable := parts[0];
       for i := 1 to parts.Count - 1 do
         if parts[i] <> '' then P.Parameters.Add(parts[i]);
-      P.Parameters.Add(fn);
-      P.Options := [poWaitOnExit];   { inherit the terminal; block until done }
+      P.Parameters.Add(FileName);
+      P.Options := [poWaitOnExit];
       P.Execute;
     finally
       parts.Free;
@@ -359,20 +407,254 @@ begin
     on E: Exception do ;             { editor missing/unlaunchable: carry on }
   end;
   InitIO;
-  { normalize on save: re-read the (possibly sloppily) edited file, then write
-    it back canonically so indentation, numbering and wrapping self-tidy and
-    the result is immediately visible }
-  FLib.ReloadAt(LibIdx);
-  { don't re-save over a parse that lost the title - leave the raw edit so the
-    user can recover it rather than clobbering it }
-  if Trim(FLib.Recipe(LibIdx).Title) <> '' then
-    SaveRecipe(FLib.Recipe(LibIdx), FLib.FilePath(LibIdx));
+  FForce := True;
+  FDirty := True;
+end;
+
+{ Edit a piece of prose (a step, the description) in the external editor. }
+procedure TBrowser.EditProseText(var S: string);
+var
+  fn: string;
+  SL: TStringList;
+begin
+  fn := GetTempFileName('', 'tc2ed');
+  SL := TStringList.Create;
+  try
+    SL.TextLineBreakStyle := tlbsLF;
+    SL.Text := S;
+    SL.SaveToFile(fn);
+    RunEditorFile(fn);
+    SL.LoadFromFile(fn);
+    S := SL.Text;
+    while (S <> '') and ((S[Length(S)] = #10) or (S[Length(S)] = #13)) do
+      Delete(S, Length(S), 1);
+  finally
+    SL.Free;
+    if FileExists(fn) then DeleteFile(fn);
+  end;
+end;
+
+procedure TBrowser.BuildEditRows;
+var
+  i: Integer;
+
+  procedure Row(K: TEditRowKind; Ix: Integer);
+  begin
+    SetLength(FEditRows, Length(FEditRows) + 1);
+    FEditRows[High(FEditRows)].Kind := K;
+    FEditRows[High(FEditRows)].Idx := Ix;
+  end;
+
+begin
+  SetLength(FEditRows, 0);
+  Row(erTitle, 0); Row(erKeywords, 0); Row(erServings, 0);
+  Row(erTime, 0); Row(erSource, 0); Row(erDesc, 0);
+  Row(erIngHdr, 0);
+  for i := 0 to High(FEdit.Ingredients) do Row(erIng, i);
+  Row(erIngAdd, 0);
+  Row(erStepHdr, 0);
+  for i := 0 to High(FEdit.Steps) do Row(erStep, i);
+  Row(erStepAdd, 0);
+  if FEditRow > High(FEditRows) then FEditRow := High(FEditRows);
+end;
+
+function TBrowser.EditRows: Integer;
+begin
+  Result := ScreenHeight - 2;     { rows 1 .. H-2 }
+  if Result < 1 then Result := 1;
+end;
+
+procedure TBrowser.EnterEdit(LibIdx: Integer);
+begin
+  if (LibIdx < 0) or (LibIdx >= FLib.Count) then Exit;
+  FEditReturn := FMode;
+  FEditIdx := LibIdx;
+  FEdit := CopyRecipe(FLib.Recipe(LibIdx));
+  FEditRow := 0;
+  FEditTop := 0;
+  BuildEditRows;
+  FMode := mEdit;
+  FForce := True;
+  FDirty := True;
+end;
+
+{ Move the cursor to the next/prev selectable row (skipping section headers). }
+procedure TBrowser.EditMove(Delta: Integer);
+var
+  r, vis: Integer;
+begin
+  if Length(FEditRows) = 0 then Exit;
+  r := FEditRow;
+  repeat
+    r := r + Delta;
+    if r < 0 then r := 0;
+    if r > High(FEditRows) then r := High(FEditRows);
+    if (r = FEditRow) then Break;                { hit an end }
+    if not (FEditRows[r].Kind in [erIngHdr, erStepHdr]) then Break;
+  until False;
+  FEditRow := r;
+  vis := EditRows;
+  if FEditRow < FEditTop then FEditTop := FEditRow;
+  if FEditRow >= FEditTop + vis then FEditTop := FEditRow - vis + 1;
+  if FEditTop < 0 then FEditTop := 0;
+  FDirty := True;
+end;
+
+procedure TBrowser.DrawEdit;
+var
+  i, y, ri: Integer;
+  attr: Byte;
+  s, val: string;
+  row: TEditRow;
+begin
+  ClearAll(AttrNormal);
+  FillRow(0, AttrTitle);
+  PutStr(1, 0, 'Edit:  ' + Disp(FEdit.Title), AttrTitle);
+
+  for i := 0 to EditRows - 1 do
+  begin
+    ri := FEditTop + i;
+    if ri > High(FEditRows) then Break;
+    y := 1 + i;
+    row := FEditRows[ri];
+    case row.Kind of
+      erTitle:     s := 'Title       ' + Disp(FEdit.Title);
+      erKeywords:  s := 'Keywords    ' + Disp(KwJoin(FEdit));
+      erServings:  s := 'Servings    ' + Disp(FEdit.Servings);
+      erTime:      s := 'Time        ' + Disp(FEdit.Time);
+      erSource:    s := 'Source      ' + Disp(FEdit.SourceUrl);
+      erDesc:      begin
+                     val := FirstLine(FEdit.Description);
+                     if Trim(val) = '' then val := '(none)';
+                     s := 'Description  ' + Disp(val);
+                   end;
+      erIngHdr:    s := '-- Ingredients --';
+      erIng:       if FEdit.Ingredients[row.Idx].IsSection then
+                     s := '  ## ' + Disp(FEdit.Ingredients[row.Idx].Text)
+                   else
+                     s := '  ' + Disp(FEdit.Ingredients[row.Idx].Text);
+      erIngAdd:    s := '  + add ingredient';
+      erStepHdr:   s := '-- Steps --';
+      erStep:      s := '  ' + IntToStr(row.Idx + 1) + '. ' +
+                        Disp(FirstLine(FEdit.Steps[row.Idx]));
+      erStepAdd:   s := '  + add step';
+    else
+      s := '';
+    end;
+
+    if ri = FEditRow then
+    begin
+      attr := AttrSel;
+      FillRow(y, attr);
+    end
+    else if row.Kind in [erIngHdr, erStepHdr] then
+      attr := AttrHeading
+    else
+      attr := AttrNormal;
+    PutStr(0, y, s, attr);
+  end;
+
+  FillRow(ScreenHeight - 1, AttrStatus);
+  PutStr(0, ScreenHeight - 1,
+    ' Enter edit  a add  d del  [ ] move  F2 save  F10 cancel', AttrStatus);
+end;
+
+procedure TBrowser.SaveEdit;
+begin
+  if Trim(FEdit.Title) = '' then
+  begin
+    Flash('Title cannot be empty - not saved');
+    Exit;
+  end;
+  SaveRecipe(FEdit, FLib.FilePath(FEditIdx));
+  FLib.ReloadAt(FEditIdx);          { canonical, reflowed copy back into the lib }
   Refilter(False);
+  FMode := FEditReturn;
   if FMode = mDetail then
   begin
-    FDetailIdx := LibIdx;
-    FLines := BuildDetailLines(FLib.Recipe(LibIdx), ScreenWidth - 2);
-    if FDetTop > High(FLines) then FDetTop := 0;
+    FDetailIdx := FEditIdx;
+    FLines := BuildDetailLines(FLib.Recipe(FEditIdx), ScreenWidth - 2);
+    FDetTop := 0;
+  end;
+  FForce := True;
+  FDirty := True;
+end;
+
+procedure TBrowser.HandleEditKey(K: TKeyEvent);
+var
+  kind: Byte;
+  code: Word;
+  ch: Char;
+  row: TEditRow;
+  v, s: string;
+begin
+  kind := GetKeyEventFlags(K) and $03;
+  if (kind = kbFnKey) or (kind = kbPhys) then
+  begin
+    code := GetKeyEventCode(K);
+    case code of
+      kbdUp:   EditMove(-1);
+      kbdDown: EditMove(1);
+      kbdPgUp: EditMove(-EditRows);
+      kbdPgDn: EditMove(EditRows);
+      kbdHome: EditMove(-Length(FEditRows));
+      kbdEnd:  EditMove(Length(FEditRows));
+      kbdF2:   SaveEdit;
+      kbdF10:  begin FMode := FEditReturn; FForce := True; FDirty := True; end;
+    end;
+    Exit;
+  end;
+
+  ch := GetKeyEventChar(K);
+  if ch = #27 then                    { Esc: cancel (best-effort) }
+  begin
+    FMode := FEditReturn; FForce := True; FDirty := True; Exit;
+  end;
+  if Length(FEditRows) = 0 then Exit;
+  row := FEditRows[FEditRow];
+
+  case ch of
+    #13:                              { Enter: edit/add current row }
+      case row.Kind of
+        erTitle:     if PromptText('Title: ', v, FEdit.Title) then FEdit.Title := v;
+        erKeywords:  if PromptText('Keywords (comma separated): ', v, KwJoin(FEdit)) then SetKeywords(FEdit, v);
+        erServings:  if PromptText('Servings: ', v, FEdit.Servings) then FEdit.Servings := v;
+        erTime:      if PromptText('Time: ', v, FEdit.Time) then FEdit.Time := v;
+        erSource:    if PromptText('Source URL: ', v, FEdit.SourceUrl) then FEdit.SourceUrl := v;
+        erDesc:      begin s := FEdit.Description; EditProseText(s); FEdit.Description := s; end;
+        erIng:       if PromptText('Ingredient: ', v, FEdit.Ingredients[row.Idx].Text) then
+                       FEdit.Ingredients[row.Idx].Text := v;
+        erIngAdd:    if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
+                     begin InsertIngredient(FEdit, Length(FEdit.Ingredients), v); BuildEditRows; end;
+        erStep:      begin s := FEdit.Steps[row.Idx]; EditProseText(s);
+                       if Trim(s) <> '' then FEdit.Steps[row.Idx] := s; end;
+        erStepAdd:   begin s := ''; EditProseText(s);
+                       if Trim(s) <> '' then begin AddStep(FEdit, s); BuildEditRows; end; end;
+      end;
+    'a', 'A':                         { insert a new item after the current one }
+      if row.Kind = erIng then
+      begin
+        if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
+        begin InsertIngredient(FEdit, row.Idx + 1, v); BuildEditRows; EditMove(1); end;
+      end
+      else if row.Kind = erStep then
+      begin
+        s := ''; EditProseText(s);
+        if Trim(s) <> '' then begin InsertStep(FEdit, row.Idx + 1, s); BuildEditRows; EditMove(1); end;
+      end;
+    'd', 'D':                         { delete the current item }
+      if row.Kind = erIng then begin DeleteIngredient(FEdit, row.Idx); BuildEditRows; end
+      else if row.Kind = erStep then begin DeleteStep(FEdit, row.Idx); BuildEditRows; end;
+    '[':                              { move item up }
+      if (row.Kind = erIng) and (row.Idx > 0) then
+      begin MoveIngredient(FEdit, row.Idx, -1); BuildEditRows; EditMove(-1); end
+      else if (row.Kind = erStep) and (row.Idx > 0) then
+      begin MoveStep(FEdit, row.Idx, -1); BuildEditRows; EditMove(-1); end;
+    ']':                              { move item down }
+      if (row.Kind = erIng) and (row.Idx < High(FEdit.Ingredients)) then
+      begin MoveIngredient(FEdit, row.Idx, 1); BuildEditRows; EditMove(1); end
+      else if (row.Kind = erStep) and (row.Idx < High(FEdit.Steps)) then
+      begin MoveStep(FEdit, row.Idx, 1); BuildEditRows; EditMove(1); end;
   end;
   FForce := True;
   FDirty := True;
@@ -393,14 +675,15 @@ end;
 
 { A one-line text input on the status row. Enter confirms (empty = cancel),
   Backspace edits, Esc cancels (when it arrives). Returns whether confirmed. }
-function TBrowser.PromptText(const Prompt: string; out Value: string): Boolean;
+function TBrowser.PromptText(const Prompt: string; out Value: string;
+  const Initial: string): Boolean;
 var
   K: TKeyEvent;
   kind: Byte;
   ch: Char;
   done: Boolean;
 begin
-  Value := '';
+  Value := Initial;
   Result := False;
   done := False;
   repeat
@@ -486,6 +769,12 @@ var
   ch: Char;
   img: string;
 begin
+  if FMode = mEdit then
+  begin
+    HandleEditKey(K);
+    Exit;
+  end;
+
   kind := GetKeyEventFlags(K) and $03;
 
   if (kind = kbFnKey) or (kind = kbPhys) then
@@ -503,7 +792,7 @@ begin
         kbdPgDn:  MoveSel(ListRows);
         kbdHome:  MoveSel(-Length(FFiltered));
         kbdEnd:   MoveSel(Length(FFiltered));
-        kbdF4:    if Length(FFiltered) > 0 then EditIndex(FFiltered[FSel]);
+        kbdF4:    if Length(FFiltered) > 0 then EnterEdit(FFiltered[FSel]);
         kbdF5:    ImportMMInteractive;
         kbdF8:    if Length(FFiltered) > 0 then DeleteIndex(FFiltered[FSel]);
       end
@@ -541,7 +830,7 @@ begin
     case ch of
       #13, #8, #27: CancelOrBack;                        { Enter / Backspace / Esc: back }
       #17, 'q', 'Q': FQuit := True;                      { letters are free here }
-      'e', 'E': EditIndex(FDetailIdx);
+      'e', 'E': EnterEdit(FDetailIdx);
       'd', 'D': DeleteIndex(FDetailIdx);
       'o', 'O':
         if FLib.Recipe(FDetailIdx).SourceUrl <> '' then
