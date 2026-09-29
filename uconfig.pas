@@ -171,7 +171,9 @@ begin
     PersonalKeyword := Ini.ReadString('site', 'personal_keyword', PersonalKeyword);
     FavoriteKeyword := Ini.ReadString('site', 'favorite_keyword', FavoriteKeyword);
     Editor := Ini.ReadString('editor', 'command', Editor);
-    Splash := Ini.ReadBool('ui', 'splash', Splash);
+    { read as a string so true/false/yes/no/1/0 all work (TIniFile.ReadBool
+      only accepts 1/0) }
+    Splash := StrToBoolDef(Ini.ReadString('ui', 'splash', BoolToStr(Splash, True)), Splash);
   finally
     Ini.Free;
   end;
@@ -221,7 +223,7 @@ begin
     Ini.WriteString('site', 'personal_keyword', PersonalKeyword);
     Ini.WriteString('site', 'favorite_keyword', FavoriteKeyword);
     Ini.WriteString('editor', 'command', Editor);
-    Ini.WriteBool('ui', 'splash', Splash);
+    Ini.WriteString('ui', 'splash', BoolToStr(Splash, True));   { "True"/"False" }
     Ini.UpdateFile;
   finally
     Ini.Free;
