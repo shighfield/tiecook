@@ -31,7 +31,12 @@ unit urecipe;
 
   Ingredient lines that begin with `## ` are sub-headings (e.g. "Sauce").
   Step numbers are cosmetic: the writer generates them and the reader
-  strips a leading `N.` so steps round-trip as plain text. }
+  strips a leading `N.` so steps round-trip as plain text.
+
+  In the description and steps, wrapped lines flow together (consecutive
+  non-blank lines are joined with spaces) and a BLANK line separates
+  paragraphs. So the exact wrapping of hand-edited or imported text doesn't
+  matter; use a blank line for a real paragraph break. }
 
 {$mode objfpc}{$H+}
 
@@ -54,7 +59,7 @@ type
     Rating: string;
     Image: string;
     Imported: string;   { ISO date, YYYY-MM-DD }
-    Description: string;           { free text, newlines preserved }
+    Description: string;           { free text; paragraphs separated by blank lines }
     Ingredients: array of TIngredient;
     Steps: array of string;        { one paragraph per step, no number }
   end;
@@ -361,15 +366,40 @@ begin
   end;
 end;
 
-{ Join a buffer of physical lines into one stored value, dropping trailing
-  blank lines. Blank lines in the middle are kept as paragraph breaks. }
-function JoinBlock(Buf: TStringList): string;
+{ Reflow a buffer of physical lines into paragraphs: consecutive non-blank
+  lines are joined with single spaces (so hard-wrapped or hand-edited text
+  flows), and a blank line separates paragraphs (kept as a blank line). This
+  makes the format forgiving of how prose is wrapped; a real break needs a
+  blank line. }
+function ReflowBlock(Buf: TStringList): string;
+var
+  i: Integer;
+  para: string;
+  paras: TStringList;
 begin
-  while (Buf.Count > 0) and (Buf[Buf.Count - 1] = '') do
-    Buf.Delete(Buf.Count - 1);
-  Result := Buf.Text;
-  if (Result <> '') and (Result[Length(Result)] = LF) then
-    Delete(Result, Length(Result), 1);
+  paras := TStringList.Create;
+  try
+    para := '';
+    for i := 0 to Buf.Count - 1 do
+      if Trim(Buf[i]) = '' then
+      begin
+        if para <> '' then begin paras.Add(para); para := ''; end;
+      end
+      else if para = '' then
+        para := Trim(Buf[i])
+      else
+        para := para + ' ' + Trim(Buf[i]);
+    if para <> '' then paras.Add(para);
+
+    Result := '';
+    for i := 0 to paras.Count - 1 do
+    begin
+      if i > 0 then Result := Result + LF + LF;
+      Result := Result + paras[i];
+    end;
+  finally
+    paras.Free;
+  end;
 end;
 
 function RecipeFromText(const S: string): TRecipe;
@@ -385,7 +415,7 @@ var
   begin
     if stepOpen then
     begin
-      AddStep(R, JoinBlock(stepBuf));
+      AddStep(R, ReflowBlock(stepBuf));
       stepBuf.Clear;
       stepOpen := False;
     end;
@@ -394,7 +424,7 @@ var
   procedure CloseSection;
   begin
     if section = 'description' then
-      R.Description := JoinBlock(descBuf)
+      R.Description := ReflowBlock(descBuf)
     else if section = 'steps' then
       CloseStep;
   end;
