@@ -85,12 +85,16 @@ Run `tiecook2` with no arguments.
 - `o` opens the recipe's source URL, `i` opens its photo, in your default app.
 - Backspace (or Left) goes back to the list; `q` or F10 quits.
 
-Edit opens the recipe's plain-text file in your editor, resolved from the
-config `[editor] command`, then `$VISUAL`, then `$EDITOR`, then a per-OS
-default (`nano` / `notepad`). When you save and exit, the file is re-written in
-a clean canonical layout — indentation, step numbering and wrapping tidy
-themselves — so you don't have to format it by hand. In the description and
-steps, wrapped lines flow together and a blank line makes a paragraph break.
+Edit opens a **structured editor**: a form of fields (title, keywords,
+servings, time, source) and lists (ingredients, steps). Move with Up/Down,
+`Enter` edits the current field or item, `a` adds an item after the current
+one, `d` deletes it, `[` and `]` move it up or down, **F2 saves**, **F10
+cancels** (discarding changes). Longer prose — a step's text or the
+description — opens in your editor (config `[editor] command`, else `$VISUAL` /
+`$EDITOR` / `nano` / `notepad`) on just that text. The recipe is always written
+in a clean canonical layout; in the description and steps, wrapped lines flow
+together and a blank line makes a paragraph break.
+
 Delete removes the recipe file and its photo; there is no undo, hence the
 confirmation.
 
