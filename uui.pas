@@ -359,7 +359,14 @@ begin
     on E: Exception do ;             { editor missing/unlaunchable: carry on }
   end;
   InitIO;
+  { normalize on save: re-read the (possibly sloppily) edited file, then write
+    it back canonically so indentation, numbering and wrapping self-tidy and
+    the result is immediately visible }
   FLib.ReloadAt(LibIdx);
+  { don't re-save over a parse that lost the title - leave the raw edit so the
+    user can recover it rather than clobbering it }
+  if Trim(FLib.Recipe(LibIdx).Title) <> '' then
+    SaveRecipe(FLib.Recipe(LibIdx), FLib.FilePath(LibIdx));
   Refilter(False);
   if FMode = mDetail then
   begin

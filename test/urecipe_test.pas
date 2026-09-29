@@ -155,15 +155,14 @@ var
   R, R2: TRecipe;
   Why: string;
 begin
-  { a step whose lines include one ending in a colon, which the reader must
-    NOT mistake for a body section (that used to silently drop later steps) }
+  { a step with a colon mid-text must not be misread as a body section }
   InitRecipe(R);
   R.Title := 'Deviled Eggs';
-  AddStep(R, 'Whisk the eggs.' + LF + 'Tip:' + LF + 'use a fork');
+  AddStep(R, 'Whisk the eggs. Tip: use a fork.');
   AddStep(R, 'Bake until set.');
   R2 := RecipeFromText(RecipeToText(R));
-  Check(SameRecipe(R, R2, Why), 'multiline step round-trip mismatch on ' + Why);
-  Check(Length(R2.Steps) = 2, 'a colon line inside step 1 dropped later steps');
+  Check(SameRecipe(R, R2, Why), 'step round-trip mismatch on ' + Why);
+  Check(Length(R2.Steps) = 2, 'a colon inside step 1 dropped later steps');
 
   { multi-paragraph step (blank line kept as a paragraph break) }
   InitRecipe(R);
@@ -186,9 +185,34 @@ begin
   R := RecipeFromText(T);
   Check(Length(R.Steps) = 2, 'CRLF continuation: step count');
   Check((Length(R.Steps) = 2) and
-        (R.Steps[0] = 'Bring water to a boil, add salt and pepper, add grits and' +
-                      LF + 'cook until the water is absorbed.'),
-        'CRLF continuation: wrapped step joined');
+        (R.Steps[0] = 'Bring water to a boil, add salt and pepper, add grits and ' +
+                      'cook until the water is absorbed.'),
+        'CRLF continuation: wrapped step reflowed to one line');
+end;
+
+procedure TestReflow;
+var
+  R: TRecipe;
+  T: string;
+begin
+  { hard-wrapped lines (single breaks) flow into one paragraph; a blank line
+    is a real paragraph break }
+  T := 'title: Reflow' + LF + LF +
+       'description:' + LF +
+       '  This is a long intro that the' + LF +
+       '  editor wrapped across lines.' + LF +
+       '' + LF +
+       '  A second paragraph.' + LF + LF +
+       'steps:' + LF +
+       '  1. Chop the onions and then' + LF +
+       '     saute them slowly.' + LF;
+  R := RecipeFromText(T);
+  Check(R.Description = 'This is a long intro that the editor wrapped across lines.'
+        + LF + LF + 'A second paragraph.',
+        'description reflow: wraps joined, blank line = paragraph break');
+  Check((Length(R.Steps) = 1) and
+        (R.Steps[0] = 'Chop the onions and then saute them slowly.'),
+        'step reflow: wrapped lines joined with a space');
 end;
 
 procedure TestNormalization;
@@ -256,6 +280,7 @@ begin
   TestFileRoundTrip;
   TestMultilineSteps;
   TestCrlfContinuation;
+  TestReflow;
   TestNormalization;
   TestUtf8;
   TestStripSource;

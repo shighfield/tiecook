@@ -87,8 +87,12 @@ Run `tiecook2` with no arguments.
 
 Edit opens the recipe's plain-text file in your editor, resolved from the
 config `[editor] command`, then `$VISUAL`, then `$EDITOR`, then a per-OS
-default (`nano` / `notepad`). Delete removes the recipe file and its photo;
-there is no undo, hence the confirmation.
+default (`nano` / `notepad`). When you save and exit, the file is re-written in
+a clean canonical layout — indentation, step numbering and wrapping tidy
+themselves — so you don't have to format it by hand. In the description and
+steps, wrapped lines flow together and a blank line makes a paragraph break.
+Delete removes the recipe file and its photo; there is no undo, hence the
+confirmation.
 
 Non-ASCII characters are transliterated to ASCII for the terminal display
 (the console is one byte per cell); the library files and the exported HTML
