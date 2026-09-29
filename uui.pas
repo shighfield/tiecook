@@ -298,7 +298,14 @@ begin
   PutCentered(cy + 5, 'press any key to begin', AttrHeading);
 
   UpdateScreen(True);
-  TranslateKeyEvent(GetKeyEvent);      { wait for any key }
+  { A terminal often emits escape sequences on startup (focus/query replies),
+    and the keypress that launched us can be buffered; either would be read
+    immediately and skip the splash. Let them arrive, discard everything
+    pending, then wait for a genuine keypress. }
+  Sleep(120);
+  while PollKeyEvent <> 0 do GetKeyEvent;
+  while PollKeyEvent = 0 do Sleep(20);
+  GetKeyEvent;
   FForce := True;
   FDirty := True;
 end;
