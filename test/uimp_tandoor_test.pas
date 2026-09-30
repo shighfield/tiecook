@@ -7,6 +7,9 @@ program uimp_tandoor_test;
 uses
   SysUtils, urecipe, umodels, uimp_tandoor;
 
+const
+  LF = #10;
+
 var
   Failures: Integer = 0;
   Checks: Integer = 0;
@@ -96,6 +99,27 @@ begin
   D.Servings := 1; D.ServingsText := '';
   R := DetailToRecipe(D, 'https://recipes.example');
   Check(R.Servings = '3', 'unset servings (1 / empty) -> 3');
+
+  { a polluted single-instruction recipe: sentence-split, junk dropped, URL kept }
+  FillChar(D, SizeOf(D), 0);
+  D.Id := 9; D.Name := 'Polluted'; D.SourceUrl := '';
+  SetLength(D.Steps, 1);
+  D.Steps[0].Instruction :=
+    'Combine the flour and salt in a bowl. Add water and mix well.' + LF + LF +
+    'Knead until smooth.' + LF + LF +
+    'Per 249 g serving: 293 cal, 12 g protein' + LF + LF +
+    'Recipe FROM: <https://example.com/ pizza-dough/>' + LF + LF +
+    '* Origin: Outpost BBS';
+  R := DetailToRecipe(D, 'https://recipes.example');
+  Check(Length(R.Steps) = 3, 'instruction sentence-split into 3 steps, junk dropped');
+  Check((Length(R.Steps) = 3) and (R.Steps[0] = 'Combine the flour and salt in a bowl.'),
+        'first sentence is a step');
+  Check((Length(R.Steps) = 3) and (R.Steps[1] = 'Add water and mix well.'),
+        'second sentence is a step');
+  Check((Length(R.Steps) = 3) and (R.Steps[2] = 'Knead until smooth.'),
+        'second paragraph is a step');
+  Check(R.SourceUrl = 'https://example.com/pizza-dough/',
+        'Recipe FROM url lifted to source-url (wrap-space repaired)');
 
   WriteLn(Format('%d checks, %d failures', [Checks, Failures]));
   if Failures > 0 then Halt(1);

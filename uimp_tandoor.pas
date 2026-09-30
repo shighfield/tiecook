@@ -35,7 +35,7 @@ function ImportTandoor(Client: TTandoorClient; Lib: TLibrary;
 implementation
 
 uses
-  SysUtils;
+  SysUtils, Classes;
 
 { --- helpers --- }
 
@@ -131,12 +131,167 @@ begin
             or (CompareText(Trim(K.Name), 'Import') = 0);
 end;
 
+{ --- instruction cleaning + sentence splitting --- }
+
+function StartsCI(const Prefix, S: string): Boolean;
+begin
+  Result := CompareText(Copy(Trim(S), 1, Length(Prefix)), Prefix) = 0;
+end;
+
+function HasCI(const Needle, S: string): Boolean;
+begin
+  Result := Pos(LowerCase(Needle), LowerCase(S)) > 0;
+end;
+
+{ Pull a URL from a line, repairing wrap-spaces and stripping <> / trailing
+  punctuation. Only used on lines already known to be attribution. }
+function GrabUrl(const S: string; out Url: string): Boolean;
+var
+  p: Integer;
+  low, tok: string;
+begin
+  Url := '';
+  low := LowerCase(S);
+  p := Pos('http://', low);
+  if p = 0 then p := Pos('https://', low);
+  if p = 0 then p := Pos('www.', low);
+  if p = 0 then Exit(False);
+  tok := Copy(S, p, Length(S));
+  tok := StringReplace(tok, ' ', '', [rfReplaceAll]);
+  tok := StringReplace(tok, #9, '', [rfReplaceAll]);
+  while (tok <> '') and (tok[Length(tok)] in ['>', ')', '.', ',', '"', '''', ']']) do
+    Delete(tok, Length(tok), 1);
+  while (tok <> '') and (tok[1] in ['<', '(', '"', '''', '[']) do
+    Delete(tok, 1, 1);
+  if CompareText(Copy(tok, 1, 4), 'www.') = 0 then tok := 'https://' + tok;
+  Url := tok;
+  Result := Url <> '';
+end;
+
+{ A paragraph that is attribution, nutrition, or BBS/tagline noise rather than
+  a real instruction. Captures a URL when present. }
+function IsJunkPara(const P: string; out Url: string): Boolean;
+begin
+  Url := '';
+  if StartsCI('recipe from', P) or StartsCI('recipe by', P) or StartsCI('source:', P)
+     or StartsCI('adapted from', P) or StartsCI('from:', P) or StartsCI('###', P)
+     or GrabUrl(P, Url) then
+  begin
+    GrabUrl(P, Url);
+    Exit(True);
+  end;
+  if HasCI('per serving', P) or HasCI('calories', P) or HasCI('g carbs', P)
+     or HasCI('g protein', P) or HasCI('g fat', P) or HasCI('mg sodium', P)
+     or HasCI('g fiber', P) or (StartsCI('per ', P) and HasCI(' cal', P)) then
+    Exit(True);
+  { Meal-Master header remnants }
+  if StartsCI('total time', P) or StartsCI('prep time', P) or StartsCI('preparation time', P)
+     or StartsCI('cooking time', P) or StartsCI('cook time', P) or StartsCI('yield', P) then
+    Exit(True);
+  if HasCI('* origin', P) or HasCI('mbse', P) or HasCI(' bbs', P) or HasCI('fidonet', P)
+     or StartsCI('---', P) or StartsCI('* ', P) then
+    Exit(True);
+  Result := False;
+end;
+
+{ Split a paragraph of running prose into sentences (ending at . ! ? followed
+  by a space and a capital, or end of text). }
+procedure SplitSentences(const P: string; Steps: TStrings);
+var
+  i, start, j: Integer;
+
+  procedure Emit(a, b: Integer);
+  var
+    t: string;
+  begin
+    t := Trim(Copy(P, a, b - a + 1));
+    if Length(t) >= 2 then Steps.Add(t);
+  end;
+
+begin
+  start := 1;
+  i := 1;
+  while i <= Length(P) do
+  begin
+    if P[i] in ['.', '!', '?'] then
+    begin
+      while (i < Length(P)) and (P[i + 1] in ['.', '!', '?']) do Inc(i);
+      if i = Length(P) then
+      begin Emit(start, i); start := i + 1; end
+      else if P[i + 1] = ' ' then
+      begin
+        j := i + 1;
+        while (j <= Length(P)) and (P[j] = ' ') do Inc(j);
+        if (j <= Length(P)) and (P[j] in ['A'..'Z']) then
+        begin Emit(start, i); i := j - 1; start := j; end;
+      end;
+    end;
+    Inc(i);
+  end;
+  if start <= Length(P) then Emit(start, Length(P));
+end;
+
+{ Turn a Tandoor instruction blob into clean steps: split into blank-line
+  paragraphs, drop junk (attribution/nutrition/BBS) capturing any URL, and
+  sentence-split the rest. }
+procedure CleanInstruction(const S: string; Steps: TStrings; var Url: string);
+var
+  lines: TStringList;
+  i: Integer;
+  para, u, contentBuf: string;
+
+  { sentence-split the accumulated content and start fresh }
+  procedure FlushContent;
+  begin
+    if contentBuf <> '' then
+    begin
+      SplitSentences(contentBuf, Steps);
+      contentBuf := '';
+    end;
+  end;
+
+  { a blank line ended a paragraph: drop junk (flushing content first so it
+    breaks the running method), or fold content paragraphs together so a method
+    wrapped across blank-separated lines rejoins before sentence splitting }
+  procedure FlushPara;
+  begin
+    if para = '' then Exit;
+    if IsJunkPara(para, u) then
+    begin
+      FlushContent;
+      if (u <> '') and (Url = '') then Url := u;
+    end
+    else if contentBuf = '' then contentBuf := para
+    else contentBuf := contentBuf + ' ' + para;
+    para := '';
+  end;
+
+begin
+  lines := TStringList.Create;
+  try
+    lines.TextLineBreakStyle := tlbsLF;
+    lines.Text := StringReplace(StringReplace(S, #13#10, #10, [rfReplaceAll]),
+                                #13, #10, [rfReplaceAll]);
+    para := '';
+    contentBuf := '';
+    for i := 0 to lines.Count - 1 do
+      if Trim(lines[i]) = '' then FlushPara
+      else if para = '' then para := Trim(lines[i])
+      else para := para + ' ' + Trim(lines[i]);
+    FlushPara;
+    FlushContent;
+  finally
+    lines.Free;
+  end;
+end;
+
 function DetailToRecipe(const D: TRecipeDetail; const BaseUrl: string): TRecipe;
 var
   i, j: Integer;
   st: umodels.TStep;
   ing: umodels.TIngredient;
-  instr, headText, srcUrl: string;
+  headText, srcUrl: string;
+  stepList: TStringList;
 begin
   InitRecipe(Result);
   Result.Title := D.Name;
@@ -173,16 +328,19 @@ begin
     end;
   end;
 
-  for i := 0 to High(D.Steps) do
-  begin
-    instr := Trim(D.Steps[i].Instruction);
-    if instr <> '' then
-    begin
-      { strip Tandoor's "### Source" trailer; keep a real URL as source-url }
-      instr := Trim(StripSourceSection(instr, srcUrl));
-      if (srcUrl <> '') and (Result.SourceUrl = '') then Result.SourceUrl := srcUrl;
-      if instr <> '' then AddStep(Result, instr);
-    end;
+  { split each step's instruction into clean, sentence-level steps, dropping
+    attribution/nutrition/BBS junk and lifting any URL into source-url }
+  srcUrl := '';
+  stepList := TStringList.Create;
+  try
+    stepList.TextLineBreakStyle := tlbsLF;
+    for i := 0 to High(D.Steps) do
+      CleanInstruction(D.Steps[i].Instruction, stepList, srcUrl);
+    if (srcUrl <> '') and (Result.SourceUrl = '') then Result.SourceUrl := srcUrl;
+    for i := 0 to stepList.Count - 1 do
+      AddStep(Result, stepList[i]);
+  finally
+    stepList.Free;
   end;
 end;
 
