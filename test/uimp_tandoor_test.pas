@@ -121,6 +121,69 @@ begin
   Check(R.SourceUrl = 'https://example.com/pizza-dough/',
         'Recipe FROM url lifted to source-url (wrap-space repaired)');
 
+  { Structure A: a run-on paragraph with an attribution sentence embedded in the
+    middle of the method -> only the attribution sentence is dropped, so real
+    method both before AND after it survives, and the gopher URL is not lifted }
+  FillChar(D, SizeOf(D), 0);
+  D.Id := 10; D.Name := 'Run-on'; D.SourceUrl := '';
+  SetLength(D.Steps, 1);
+  D.Steps[0].Instruction :=
+    'Mix the flour and salt. ' +
+    'Recipe FROM: <gopher://sdf.org/0/users/x/recipe.txt> leftover. ' +
+    'Add water and knead well.';
+  R := DetailToRecipe(D, 'https://recipes.example');
+  Check(Length(R.Steps) = 2, 'embedded attribution dropped, method before+after kept');
+  Check((Length(R.Steps) = 2) and (R.Steps[0] = 'Mix the flour and salt.'),
+        'run-on: method before the attribution kept');
+  Check((Length(R.Steps) = 2) and (R.Steps[1] = 'Add water and knead well.'),
+        'run-on: method after the attribution kept (not cut off)');
+  Check(R.SourceUrl = '', 'run-on: gopher url not lifted as source');
+
+  { Structure B: a <...> URL wrapped across blank-separated paragraphs, then a
+    filename fragment and a BBS tagline -> the URL is rejoined whole and lifted,
+    and neither the fragment nor the tagline leaks into the steps }
+  FillChar(D, SizeOf(D), 0);
+  D.Id := 11; D.Name := 'Wrapped URL'; D.SourceUrl := '';
+  SetLength(D.Steps, 1);
+  D.Steps[0].Instruction :=
+    'Mash the beans and potatoes.' + LF + LF +
+    'Shape into patties and fry.' + LF + LF +
+    'Recipe FROM: <https://web.archive.org/web/2018/' + LF + LF +
+    'http://www.example.com/recipes/' + LF + LF +
+    'thing.php>' + LF + LF +
+    'Wherever you go, there you are!' + LF + LF +
+    '--- MBSE BBS v1.1';
+  R := DetailToRecipe(D, 'https://recipes.example');
+  Check(Length(R.Steps) = 2, 'wrapped url: only the two real steps remain');
+  Check((Length(R.Steps) = 2) and (R.Steps[1] = 'Shape into patties and fry.'),
+        'wrapped url: last step is real method, not a .php fragment or tagline');
+  Check(R.SourceUrl = 'https://web.archive.org/web/2018/http://www.example.com/recipes/thing.php',
+        'wrapped url: archive wrapper rejoined whole and lifted');
+
+  { a step whose entire instruction is attribution is dropped }
+  FillChar(D, SizeOf(D), 0);
+  D.Id := 12; D.Name := 'Standalone attr'; D.SourceUrl := '';
+  SetLength(D.Steps, 2);
+  D.Steps[0].Instruction := 'Stir and serve.';
+  D.Steps[1].Instruction := 'SOURCE: Panda Restaurant LA, Ca.';
+  R := DetailToRecipe(D, 'https://recipes.example');
+  Check(Length(R.Steps) = 1, 'standalone attribution step dropped');
+  Check((Length(R.Steps) = 1) and (R.Steps[0] = 'Stir and serve.'),
+        'standalone: only the real step remains');
+
+  { a stray "<" in corrupted method text must NOT be treated as a wrapped URL:
+    the following "### Source" paragraph must still be dropped, not merged in }
+  FillChar(D, SizeOf(D), 0);
+  D.Id := 13; D.Name := 'Stray bracket'; D.SourceUrl := '';
+  SetLength(D.Steps, 1);
+  D.Steps[0].Instruction :=
+    'Then add half the mix C<Biscuits and stir.' + LF + LF +
+    '### Source Dessert';
+  R := DetailToRecipe(D, 'https://recipes.example');
+  Check(Length(R.Steps) = 1, 'stray bracket: real step kept, ### Source dropped');
+  Check((Length(R.Steps) = 1) and (R.Steps[0] = 'Then add half the mix C<Biscuits and stir.'),
+        'stray bracket: ### Source not merged into the step');
+
   WriteLn(Format('%d checks, %d failures', [Checks, Failures]));
   if Failures > 0 then Halt(1);
   WriteLn('OK');
