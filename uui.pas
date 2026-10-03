@@ -33,8 +33,8 @@ type
   TMode = (mList, mDetail, mEdit);
 
   { rows of the structured editor; headers are not selectable }
-  TEditRowKind = (erTitle, erKeywords, erServings, erTime, erSource, erDesc,
-                  erIngHdr, erIng, erIngAdd, erStepHdr, erStep, erStepAdd);
+  TEditRowKind = (erTitle, erKeywords, erServings, erTime, erSource, erImage,
+                  erDesc, erIngHdr, erIng, erIngAdd, erStepHdr, erStep, erStepAdd);
   TEditRow = record
     Kind: TEditRowKind;
     Idx: Integer;           { item index for erIng / erStep }
@@ -68,6 +68,8 @@ type
     FEditTop: Integer;     { first visible editor row }
     FEditRows: array of TEditRow;
     FEditReturn: TMode;    { mode to return to on save/cancel }
+    FEditImageSrc: string; { pending photo to copy in on save ('' = none) }
+    FEditImageClear: Boolean; { pending photo removal on save }
     FZones: array of THotZone;  { clickable status-bar segments from last draw }
     function ListRows: Integer;
     function DetailRows: Integer;
@@ -106,6 +108,8 @@ type
     procedure ActivateEditRow;
     procedure AddEditItem;
     procedure DeleteEditItem;
+    procedure SetEditImage;
+    procedure SetDetailImage;
   public
     constructor Create(Lib: TLibrary; Cfg: TConfig);
     procedure Run;
@@ -149,6 +153,52 @@ begin
   x := (ScreenWidth - Length(S)) div 2;
   if x < 0 then x := 0;
   PutStr(x, y, S, Attr);
+end;
+
+{ Expand a leading ~ to the user's home directory. }
+function ExpandTilde(const P: string): string;
+begin
+  Result := P;
+  if (Length(P) >= 1) and (P[1] = '~') then
+  begin
+    if Length(P) = 1 then
+      Result := ExcludeTrailingPathDelimiter(GetUserDir)
+    else if (P[2] = '/') or (P[2] = PathDelim) then
+      Result := IncludeTrailingPathDelimiter(GetUserDir) + Copy(P, 3, Length(P));
+  end;
+end;
+
+{ True for an image extension the library serves (leading dot, any case). }
+function ImgExtOk(const Ext: string): Boolean;
+var
+  e: string;
+begin
+  e := LowerCase(Ext);
+  Result := (e = '.jpg') or (e = '.jpeg') or (e = '.png') or (e = '.webp');
+end;
+
+{ Copy a file's bytes to Dest (overwriting). Returns False on any error. }
+function CopyFileTo(const Src, Dest: string): Boolean;
+var
+  fs, fd: TFileStream;
+begin
+  Result := False;
+  try
+    fs := TFileStream.Create(Src, fmOpenRead or fmShareDenyNone);
+    try
+      fd := TFileStream.Create(Dest, fmCreate);
+      try
+        if fs.Size > 0 then fd.CopyFrom(fs, fs.Size);
+      finally
+        fd.Free;
+      end;
+    finally
+      fs.Free;
+    end;
+    Result := True;
+  except
+    on E: Exception do Result := False;
+  end;
 end;
 
 { --- TBrowser --- }
@@ -328,6 +378,7 @@ begin
   StatusSeg(sx, ' d delete ', 'del');
   if FLib.Recipe(FDetailIdx).SourceUrl <> '' then StatusSeg(sx, ' o source ', 'source');
   if FLib.ImageBasename(FDetailIdx) <> '' then StatusSeg(sx, ' i image ', 'image');
+  StatusSeg(sx, ' p photo ', 'photo');
   StatusSeg(sx, ' q back ', 'back');
   StatusSeg(sx, ' F10 quit', 'quit');
 end;
@@ -512,7 +563,7 @@ var
 begin
   SetLength(FEditRows, 0);
   Row(erTitle, 0); Row(erKeywords, 0); Row(erServings, 0);
-  Row(erTime, 0); Row(erSource, 0); Row(erDesc, 0);
+  Row(erTime, 0); Row(erSource, 0); Row(erImage, 0); Row(erDesc, 0);
   Row(erIngHdr, 0);
   for i := 0 to High(FEdit.Ingredients) do Row(erIng, i);
   Row(erIngAdd, 0);
@@ -534,6 +585,8 @@ begin
   FEditReturn := FMode;
   FEditIdx := LibIdx;
   FEdit := CopyRecipe(FLib.Recipe(LibIdx));
+  FEditImageSrc := '';
+  FEditImageClear := False;
   FEditRow := 0;
   FEditTop := 0;
   BuildEditRows;
@@ -587,6 +640,11 @@ begin
       erServings:  s := 'Servings    ' + Disp(FEdit.Servings);
       erTime:      s := 'Time        ' + Disp(FEdit.Time);
       erSource:    s := 'Source      ' + Disp(FEdit.SourceUrl);
+      erImage:     begin
+                     val := FEdit.Image;
+                     if Trim(val) = '' then val := '(none)';
+                     s := 'Image       ' + Disp(val);
+                   end;
       erDesc:      begin
                      val := FirstLine(FEdit.Description);
                      if Trim(val) = '' then val := '(none)';
@@ -629,12 +687,37 @@ begin
 end;
 
 procedure TBrowser.SaveEdit;
+var
+  libd, oldImg: string;
 begin
   if Trim(FEdit.Title) = '' then
   begin
     Flash('Title cannot be empty - not saved');
     Exit;
   end;
+  libd := IncludeTrailingPathDelimiter(FLib.Dir);
+  oldImg := FLib.ImageBasename(FEditIdx);   { current photo, before we overwrite }
+
+  { apply a pending photo change to disk (editor works on a copy, so this is
+    deferred to save; cancel never reaches here) }
+  if FEditImageSrc <> '' then
+  begin
+    if CopyFileTo(FEditImageSrc, libd + FEdit.Image) then
+    begin
+      if (oldImg <> '') and (oldImg <> FEdit.Image) and FileExists(libd + oldImg) then
+        DeleteFile(libd + oldImg);          { drop a differently-named old photo }
+    end
+    else
+    begin
+      Flash('Could not copy image - saving recipe without it');
+      FEdit.Image := oldImg;                { keep the previous photo reference }
+    end;
+  end
+  else if FEditImageClear then
+  begin
+    if (oldImg <> '') and FileExists(libd + oldImg) then DeleteFile(libd + oldImg);
+  end;
+
   SaveRecipe(FEdit, FLib.FilePath(FEditIdx));
   FLib.ReloadAt(FEditIdx);          { canonical, reflowed copy back into the lib }
   Refilter(False);
@@ -664,6 +747,7 @@ begin
     erServings:  if PromptText('Servings: ', v, FEdit.Servings) then FEdit.Servings := v;
     erTime:      if PromptText('Time: ', v, FEdit.Time) then FEdit.Time := v;
     erSource:    if PromptText('Source URL: ', v, FEdit.SourceUrl) then FEdit.SourceUrl := v;
+    erImage:     SetEditImage;
     erDesc:      begin s := FEdit.Description; EditProseText(s); FEdit.Description := s; end;
     erIng:       if PromptText('Ingredient: ', v, FEdit.Ingredients[row.Idx].Text) then
                    FEdit.Ingredients[row.Idx].Text := v;
@@ -705,6 +789,74 @@ begin
   row := FEditRows[FEditRow];
   if row.Kind = erIng then begin DeleteIngredient(FEdit, row.Idx); BuildEditRows; end
   else if row.Kind = erStep then begin DeleteStep(FEdit, row.Idx); BuildEditRows; end;
+end;
+
+{ Editor "Image" row: prompt for a photo to attach (blank removes the current
+  one). The file is only copied/removed on save, so a cancel is undoable. The
+  destination name is the recipe's slug plus the source extension. }
+procedure TBrowser.SetEditImage;
+var
+  p, ext, destName: string;
+begin
+  if not PromptText('Image file path (blank to remove): ', p, '') then Exit;  { cancelled }
+  p := Trim(p);
+  if p = '' then
+  begin
+    FEdit.Image := '';
+    FEditImageSrc := '';
+    FEditImageClear := True;
+    Exit;
+  end;
+  p := ExpandTilde(p);
+  if not FileExists(p) then begin Flash('No such file: ' + p); Exit; end;
+  ext := ExtractFileExt(p);
+  if not ImgExtOk(ext) then begin Flash('Image must be .jpg, .jpeg, .png or .webp'); Exit; end;
+  destName := ChangeFileExt(ExtractFileName(FLib.FilePath(FEditIdx)), LowerCase(ext));
+  FEditImageSrc := p;
+  FEditImageClear := False;
+  FEdit.Image := destName;     { tentative; copied in on save }
+end;
+
+{ Recipe-view 'p' action: attach or replace a photo immediately (blank removes
+  it). Unlike the editor this writes straight through, since there is no
+  save/cancel step in the detail view. }
+procedure TBrowser.SetDetailImage;
+var
+  R: TRecipe;
+  p, ext, libd, destName, oldImg: string;
+begin
+  if not PromptText('Image file path (blank to remove): ', p, '') then Exit;
+  p := Trim(p);
+  libd := IncludeTrailingPathDelimiter(FLib.Dir);
+  oldImg := FLib.ImageBasename(FDetailIdx);
+  R := CopyRecipe(FLib.Recipe(FDetailIdx));
+  if p = '' then
+  begin
+    if oldImg = '' then begin Flash('No photo to remove'); Exit; end;
+    if FileExists(libd + oldImg) then DeleteFile(libd + oldImg);
+    R.Image := '';
+    SaveRecipe(R, FLib.FilePath(FDetailIdx));
+    FLib.ReloadAt(FDetailIdx);
+    Flash('Photo removed');
+  end
+  else
+  begin
+    p := ExpandTilde(p);
+    if not FileExists(p) then begin Flash('No such file: ' + p); Exit; end;
+    ext := ExtractFileExt(p);
+    if not ImgExtOk(ext) then begin Flash('Image must be .jpg, .jpeg, .png or .webp'); Exit; end;
+    destName := ChangeFileExt(ExtractFileName(FLib.FilePath(FDetailIdx)), LowerCase(ext));
+    if not CopyFileTo(p, libd + destName) then begin Flash('Could not copy image'); Exit; end;
+    if (oldImg <> '') and (oldImg <> destName) and FileExists(libd + oldImg) then
+      DeleteFile(libd + oldImg);
+    R.Image := destName;
+    SaveRecipe(R, FLib.FilePath(FDetailIdx));
+    FLib.ReloadAt(FDetailIdx);
+    Flash('Photo set: ' + destName);
+  end;
+  FLines := BuildDetailLines(FLib.Recipe(FDetailIdx), ScreenWidth - 2);
+  FForce := True;
+  FDirty := True;
 end;
 
 procedure TBrowser.HandleEditKey(K: TKeyEvent);
@@ -945,6 +1097,7 @@ begin
             FForce := True; FDirty := True;
           end;
         end;
+      'p', 'P': SetDetailImage;
     end;
 end;
 
@@ -980,6 +1133,7 @@ begin
     begin OpenExternal(IncludeTrailingPathDelimiter(FLib.Dir) + img); FForce := True; FDirty := True; end;
   end
   else if Tag = 'back' then CancelOrBack
+  else if Tag = 'photo' then SetDetailImage
   else if Tag = 'quit' then FQuit := True
   else if Tag = 'activate' then begin ActivateEditRow; FForce := True; FDirty := True; end
   else if Tag = 'eadd' then begin AddEditItem; FForce := True; FDirty := True; end
