@@ -83,7 +83,7 @@ Run `tiecook2` with no arguments.
 - Up/Down/PgUp/PgDn/Home/End (or the wheel) scroll.
 - `e` edits the recipe, `d` deletes it (with a confirmation).
 - `o` opens the recipe's source URL, `i` opens its photo, in your default app.
-- Backspace (or Left) goes back to the list; `q` or F10 quits.
+- `q`, Esc, or Left goes back to the list; F10 (or Ctrl-Q) quits.
 
 Edit opens a **structured editor**: a form of fields (title, keywords,
 servings, time, source) and lists (ingredients, steps). Move with Up/Down,
