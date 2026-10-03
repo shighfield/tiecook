@@ -68,6 +68,10 @@ refuses to overwrite anything else, so it can't clobber an existing site.
 
 Run `tiecook2` with no arguments.
 
+The mouse works throughout: the wheel scrolls, clicking selects (and a second
+click opens/edits), and the labels on the bottom status bar are clickable. A
+click also dismisses the title screen.
+
 **Recipe list**
 
 - Type to search (matches every word against titles, keywords and text),
@@ -89,7 +93,8 @@ Edit opens a **structured editor**: a form of fields (title, keywords,
 servings, time, source) and lists (ingredients, steps). Move with Up/Down,
 `Enter` edits the current field or item, `a` adds an item after the current
 one, `d` deletes it, `[` and `]` move it up or down, **F2 saves**, **F10
-cancels** (discarding changes). Longer prose — a step's text or the
+cancels** (discarding changes). Click a row to select it, click it again to
+edit it, and the wheel scrolls. Longer prose — a step's text or the
 description — opens in your editor (config `[editor] command`, else `$VISUAL` /
 `$EDITOR` / `nano` / `notepad`) on just that text. The recipe is always written
 in a clean canonical layout; in the description and steps, wrapped lines flow

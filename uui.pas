@@ -40,6 +40,12 @@ type
     Idx: Integer;           { item index for erIng / erStep }
   end;
 
+  { a clickable segment of the bottom status bar }
+  THotZone = record
+    x1, x2: Integer;        { inclusive column range on the status row }
+    Tag: string;            { action id dispatched on click }
+  end;
+
   TBrowser = class
   private
     FLib: TLibrary;
@@ -62,6 +68,7 @@ type
     FEditTop: Integer;     { first visible editor row }
     FEditRows: array of TEditRow;
     FEditReturn: TMode;    { mode to return to on save/cancel }
+    FZones: array of THotZone;  { clickable status-bar segments from last draw }
     function ListRows: Integer;
     function DetailRows: Integer;
     procedure Refilter(ResetSel: Boolean);
@@ -92,6 +99,13 @@ type
     procedure ImportMMInteractive;
     procedure HandleKey(K: TKeyEvent);
     procedure HandleMouse(const M: TMouseEvent);
+    procedure ClearZones;
+    procedure StatusSeg(var x: Integer; const Txt, Tag: string);
+    function ZoneAt(x: Integer): string;
+    procedure ClickAction(const Tag: string);
+    procedure ActivateEditRow;
+    procedure AddEditItem;
+    procedure DeleteEditItem;
   public
     constructor Create(Lib: TLibrary; Cfg: TConfig);
     procedure Run;
@@ -209,9 +223,39 @@ begin
   FDirty := True;
 end;
 
+procedure TBrowser.ClearZones;
+begin
+  SetLength(FZones, 0);
+end;
+
+{ Write one status-bar segment at column x (advancing x past it) and, when Tag
+  is set, record its column range so a click there triggers that action. }
+procedure TBrowser.StatusSeg(var x: Integer; const Txt, Tag: string);
+begin
+  PutStr(x, ScreenHeight - 1, Txt, AttrStatus);
+  if Tag <> '' then
+  begin
+    SetLength(FZones, Length(FZones) + 1);
+    FZones[High(FZones)].x1 := x;
+    FZones[High(FZones)].x2 := x + Length(Txt) - 1;
+    FZones[High(FZones)].Tag := Tag;
+  end;
+  Inc(x, Length(Txt));
+end;
+
+{ The action tag for a status-bar column, or '' if none. }
+function TBrowser.ZoneAt(x: Integer): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(FZones) do
+    if (x >= FZones[i].x1) and (x <= FZones[i].x2) then Exit(FZones[i].Tag);
+end;
+
 procedure TBrowser.DrawList;
 var
-  i, y, idx, vis: Integer;
+  i, y, idx, vis, sx: Integer;
   attr: Byte;
   marker, title: string;
 begin
@@ -243,18 +287,23 @@ begin
     PutStr(0, y, marker + ListLabel(FLib.Recipe(FFiltered[idx]), ScreenWidth - 2), attr);
   end;
 
-  { status bar }
+  { status bar (clickable segments) }
   FillRow(ScreenHeight - 1, AttrStatus);
-  PutStr(0, ScreenHeight - 1,
-    Format(' %d/%d  Enter open  F4 edit  F5 import  F8 del  type=search  F10 quit',
-           [Length(FFiltered), FLib.Count]), AttrStatus);
+  sx := 0;
+  StatusSeg(sx, Format(' %d/%d ', [Length(FFiltered), FLib.Count]), '');
+  StatusSeg(sx, ' Enter open ', 'open');
+  StatusSeg(sx, ' F4 edit ', 'edit');
+  StatusSeg(sx, ' F5 import ', 'import');
+  StatusSeg(sx, ' F8 del ', 'del');
+  StatusSeg(sx, ' type=search ', '');
+  StatusSeg(sx, ' F10 quit', 'quit');
 end;
 
 procedure TBrowser.DrawDetail;
 var
-  i, y, li: Integer;
+  i, y, li, sx: Integer;
   attr: Byte;
-  line, status: string;
+  line: string;
 begin
   ClearAll(AttrNormal);
 
@@ -273,15 +322,19 @@ begin
   end;
 
   FillRow(ScreenHeight - 1, AttrStatus);
-  status := ' scroll  e edit  d delete';
-  if FLib.Recipe(FDetailIdx).SourceUrl <> '' then status := status + '  o source';
-  if FLib.ImageBasename(FDetailIdx) <> '' then status := status + '  i image';
-  status := status + '  q back  F10 quit';
-  PutStr(0, ScreenHeight - 1, status, AttrStatus);
+  sx := 0;
+  StatusSeg(sx, ' scroll ', '');
+  StatusSeg(sx, ' e edit ', 'edit');
+  StatusSeg(sx, ' d delete ', 'del');
+  if FLib.Recipe(FDetailIdx).SourceUrl <> '' then StatusSeg(sx, ' o source ', 'source');
+  if FLib.ImageBasename(FDetailIdx) <> '' then StatusSeg(sx, ' i image ', 'image');
+  StatusSeg(sx, ' q back ', 'back');
+  StatusSeg(sx, ' F10 quit', 'quit');
 end;
 
 procedure TBrowser.Draw;
 begin
+  ClearZones;                 { rebuilt by whichever status bar we draw }
   case FMode of
     mList:   DrawList;
     mDetail: DrawDetail;
@@ -293,7 +346,8 @@ begin
 end;
 
 { The startup splash: an ASCII-art banner (figlet "standard" font), the site
-  title, a tagline, the recipe count and a prompt. Any key dismisses it. }
+  title, a tagline, the recipe count and a prompt. Any key or mouse click
+  dismisses it. }
 procedure TBrowser.ShowTitle;
 const
   AttrBanner = 11;   { light cyan on black }
@@ -307,6 +361,7 @@ const
 var
   top, x, i, cy: Integer;
   sub: string;
+  M: TMouseEvent;
 begin
   ClearAll(AttrNormal);
   top := (ScreenHeight - 12) div 2;
@@ -322,17 +377,26 @@ begin
   PutCentered(cy, Disp(sub), 15);                          { site title, bright white }
   PutCentered(cy + 1, 'your recipe library', AttrNormal);
   PutCentered(cy + 3, IntToStr(FLib.Count) + ' recipes', AttrNormal);
-  PutCentered(cy + 5, 'press any key to begin', AttrHeading);
+  PutCentered(cy + 5, 'press any key or click to begin', AttrHeading);
 
   UpdateScreen(True);
   { A terminal often emits escape sequences on startup (focus/query replies),
     and the keypress that launched us can be buffered; either would be read
     immediately and skip the splash. Let them arrive, discard everything
-    pending, then wait for a genuine keypress. }
+    pending, then wait for a genuine keypress or mouse click. }
   Sleep(120);
   while PollKeyEvent <> 0 do GetKeyEvent;
-  while PollKeyEvent = 0 do Sleep(20);
-  GetKeyEvent;
+  if FHasMouse then
+    while PollMouseEvent(M) do GetMouseEvent(M);
+  repeat
+    if PollKeyEvent <> 0 then begin GetKeyEvent; Break; end;
+    if FHasMouse and PollMouseEvent(M) then
+    begin
+      GetMouseEvent(M);
+      if (M.Action and MouseActionDown) <> 0 then Break;   { click or wheel }
+    end;
+    Sleep(20);
+  until False;
   FForce := True;
   FDirty := True;
 end;
@@ -502,7 +566,7 @@ end;
 
 procedure TBrowser.DrawEdit;
 var
-  i, y, ri: Integer;
+  i, y, ri, sx: Integer;
   attr: Byte;
   s, val: string;
   row: TEditRow;
@@ -555,8 +619,13 @@ begin
   end;
 
   FillRow(ScreenHeight - 1, AttrStatus);
-  PutStr(0, ScreenHeight - 1,
-    ' Enter edit  a add  d del  [ ] move  F2 save  F10 cancel', AttrStatus);
+  sx := 0;
+  StatusSeg(sx, ' Enter edit ', 'activate');
+  StatusSeg(sx, ' a add ', 'eadd');
+  StatusSeg(sx, ' d del ', 'edel');
+  StatusSeg(sx, ' [ ] move ', '');
+  StatusSeg(sx, ' F2 save ', 'save');
+  StatusSeg(sx, ' F10 cancel', 'cancel');
 end;
 
 procedure TBrowser.SaveEdit;
@@ -580,13 +649,70 @@ begin
   FDirty := True;
 end;
 
+{ Edit/open the current editor row (the Enter action), shared by keyboard and
+  mouse. }
+procedure TBrowser.ActivateEditRow;
+var
+  row: TEditRow;
+  v, s: string;
+begin
+  if Length(FEditRows) = 0 then Exit;
+  row := FEditRows[FEditRow];
+  case row.Kind of
+    erTitle:     if PromptText('Title: ', v, FEdit.Title) then FEdit.Title := v;
+    erKeywords:  if PromptText('Keywords (comma separated): ', v, KwJoin(FEdit)) then SetKeywords(FEdit, v);
+    erServings:  if PromptText('Servings: ', v, FEdit.Servings) then FEdit.Servings := v;
+    erTime:      if PromptText('Time: ', v, FEdit.Time) then FEdit.Time := v;
+    erSource:    if PromptText('Source URL: ', v, FEdit.SourceUrl) then FEdit.SourceUrl := v;
+    erDesc:      begin s := FEdit.Description; EditProseText(s); FEdit.Description := s; end;
+    erIng:       if PromptText('Ingredient: ', v, FEdit.Ingredients[row.Idx].Text) then
+                   FEdit.Ingredients[row.Idx].Text := v;
+    erIngAdd:    if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
+                 begin InsertIngredient(FEdit, Length(FEdit.Ingredients), v); BuildEditRows; end;
+    erStep:      begin s := FEdit.Steps[row.Idx]; EditProseText(s);
+                   if Trim(s) <> '' then FEdit.Steps[row.Idx] := s; end;
+    erStepAdd:   begin s := ''; EditProseText(s);
+                   if Trim(s) <> '' then begin AddStep(FEdit, s); BuildEditRows; end; end;
+  end;
+end;
+
+{ Insert a new item after the current ingredient/step (the 'a' action). }
+procedure TBrowser.AddEditItem;
+var
+  row: TEditRow;
+  v, s: string;
+begin
+  if Length(FEditRows) = 0 then Exit;
+  row := FEditRows[FEditRow];
+  if row.Kind = erIng then
+  begin
+    if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
+    begin InsertIngredient(FEdit, row.Idx + 1, v); BuildEditRows; EditMove(1); end;
+  end
+  else if row.Kind = erStep then
+  begin
+    s := ''; EditProseText(s);
+    if Trim(s) <> '' then begin InsertStep(FEdit, row.Idx + 1, s); BuildEditRows; EditMove(1); end;
+  end;
+end;
+
+{ Delete the current ingredient/step (the 'd' action). }
+procedure TBrowser.DeleteEditItem;
+var
+  row: TEditRow;
+begin
+  if Length(FEditRows) = 0 then Exit;
+  row := FEditRows[FEditRow];
+  if row.Kind = erIng then begin DeleteIngredient(FEdit, row.Idx); BuildEditRows; end
+  else if row.Kind = erStep then begin DeleteStep(FEdit, row.Idx); BuildEditRows; end;
+end;
+
 procedure TBrowser.HandleEditKey(K: TKeyEvent);
 var
   kind: Byte;
   code: Word;
   ch: Char;
   row: TEditRow;
-  v, s: string;
 begin
   kind := GetKeyEventFlags(K) and $03;
   if (kind = kbFnKey) or (kind = kbPhys) then
@@ -614,37 +740,9 @@ begin
   row := FEditRows[FEditRow];
 
   case ch of
-    #13:                              { Enter: edit/add current row }
-      case row.Kind of
-        erTitle:     if PromptText('Title: ', v, FEdit.Title) then FEdit.Title := v;
-        erKeywords:  if PromptText('Keywords (comma separated): ', v, KwJoin(FEdit)) then SetKeywords(FEdit, v);
-        erServings:  if PromptText('Servings: ', v, FEdit.Servings) then FEdit.Servings := v;
-        erTime:      if PromptText('Time: ', v, FEdit.Time) then FEdit.Time := v;
-        erSource:    if PromptText('Source URL: ', v, FEdit.SourceUrl) then FEdit.SourceUrl := v;
-        erDesc:      begin s := FEdit.Description; EditProseText(s); FEdit.Description := s; end;
-        erIng:       if PromptText('Ingredient: ', v, FEdit.Ingredients[row.Idx].Text) then
-                       FEdit.Ingredients[row.Idx].Text := v;
-        erIngAdd:    if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
-                     begin InsertIngredient(FEdit, Length(FEdit.Ingredients), v); BuildEditRows; end;
-        erStep:      begin s := FEdit.Steps[row.Idx]; EditProseText(s);
-                       if Trim(s) <> '' then FEdit.Steps[row.Idx] := s; end;
-        erStepAdd:   begin s := ''; EditProseText(s);
-                       if Trim(s) <> '' then begin AddStep(FEdit, s); BuildEditRows; end; end;
-      end;
-    'a', 'A':                         { insert a new item after the current one }
-      if row.Kind = erIng then
-      begin
-        if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
-        begin InsertIngredient(FEdit, row.Idx + 1, v); BuildEditRows; EditMove(1); end;
-      end
-      else if row.Kind = erStep then
-      begin
-        s := ''; EditProseText(s);
-        if Trim(s) <> '' then begin InsertStep(FEdit, row.Idx + 1, s); BuildEditRows; EditMove(1); end;
-      end;
-    'd', 'D':                         { delete the current item }
-      if row.Kind = erIng then begin DeleteIngredient(FEdit, row.Idx); BuildEditRows; end
-      else if row.Kind = erStep then begin DeleteStep(FEdit, row.Idx); BuildEditRows; end;
+    #13:      ActivateEditRow;        { Enter: edit/add current row }
+    'a', 'A': AddEditItem;            { insert a new item after the current one }
+    'd', 'D': DeleteEditItem;         { delete the current item }
     '[':                              { move item up }
       if (row.Kind = erIng) and (row.Idx > 0) then
       begin MoveIngredient(FEdit, row.Idx, -1); BuildEditRows; EditMove(-1); end
@@ -850,35 +948,109 @@ begin
     end;
 end;
 
+{ Run the action for a clicked status-bar label. Tags are drawn per mode, so
+  the shared ones (edit/del/quit) act on whatever the current mode shows. }
+procedure TBrowser.ClickAction(const Tag: string);
+var
+  img: string;
+begin
+  if Tag = 'open' then OpenDetail
+  else if Tag = 'edit' then
+  begin
+    if FMode = mList then
+    begin if Length(FFiltered) > 0 then EnterEdit(FFiltered[FSel]); end
+    else EnterEdit(FDetailIdx);
+  end
+  else if Tag = 'del' then
+  begin
+    if FMode = mList then
+    begin if Length(FFiltered) > 0 then DeleteIndex(FFiltered[FSel]); end
+    else DeleteIndex(FDetailIdx);
+  end
+  else if Tag = 'import' then ImportMMInteractive
+  else if Tag = 'source' then
+  begin
+    if FLib.Recipe(FDetailIdx).SourceUrl <> '' then
+    begin OpenExternal(FLib.Recipe(FDetailIdx).SourceUrl); FForce := True; FDirty := True; end;
+  end
+  else if Tag = 'image' then
+  begin
+    img := FLib.ImageBasename(FDetailIdx);
+    if img <> '' then
+    begin OpenExternal(IncludeTrailingPathDelimiter(FLib.Dir) + img); FForce := True; FDirty := True; end;
+  end
+  else if Tag = 'back' then CancelOrBack
+  else if Tag = 'quit' then FQuit := True
+  else if Tag = 'activate' then begin ActivateEditRow; FForce := True; FDirty := True; end
+  else if Tag = 'eadd' then begin AddEditItem; FForce := True; FDirty := True; end
+  else if Tag = 'edel' then begin DeleteEditItem; FForce := True; FDirty := True; end
+  else if Tag = 'save' then SaveEdit
+  else if Tag = 'cancel' then begin FMode := FEditReturn; FForce := True; FDirty := True; end;
+end;
+
 procedure TBrowser.HandleMouse(const M: TMouseEvent);
 var
-  idx: Integer;
+  idx, y, ri: Integer;
+  tag: string;
 begin
   if (M.Action and MouseActionDown) = 0 then Exit;
 
+  { wheel: scroll the list / detail text / editor rows }
   if (M.Buttons and MouseButton4) <> 0 then          { wheel up }
   begin
-    if FMode = mList then MoveSel(-3) else DetailScroll(-3);
+    case FMode of
+      mList:   MoveSel(-3);
+      mDetail: DetailScroll(-3);
+      mEdit:   EditMove(-3);
+    end;
     Exit;
   end;
   if (M.Buttons and MouseButton5) <> 0 then          { wheel down }
   begin
-    if FMode = mList then MoveSel(3) else DetailScroll(3);
+    case FMode of
+      mList:   MoveSel(3);
+      mDetail: DetailScroll(3);
+      mEdit:   EditMove(3);
+    end;
     Exit;
   end;
 
-  if (M.Buttons and MouseLeftButton) <> 0 then
+  if (M.Buttons and MouseLeftButton) = 0 then Exit;
+  y := Integer(M.y);
+
+  { a click on the bottom status bar triggers that label's action }
+  if y = ScreenHeight - 1 then
   begin
-    if FMode = mList then
-    begin
-      { list rows start at screen row 3 }
-      idx := FTop + (Integer(M.y) - 3);
-      if (Integer(M.y) >= 3) and (idx >= 0) and (idx <= High(FFiltered)) then
+    tag := ZoneAt(Integer(M.x));
+    if tag <> '' then ClickAction(tag);
+    Exit;
+  end;
+
+  case FMode of
+    mList:
       begin
-        if idx = FSel then OpenDetail
-        else begin FSel := idx; FDirty := True; end;
+        { list rows start at screen row 3 }
+        idx := FTop + (y - 3);
+        if (y >= 3) and (idx >= 0) and (idx <= High(FFiltered)) then
+        begin
+          if idx = FSel then OpenDetail
+          else begin FSel := idx; FDirty := True; end;
+        end;
       end;
-    end;
+    mEdit:
+      begin
+        { editor rows start at screen row 1 }
+        if (y >= 1) and (y <= EditRows) then
+        begin
+          ri := FEditTop + (y - 1);
+          if (ri >= 0) and (ri <= High(FEditRows)) then
+          begin
+            if ri = FEditRow then begin ActivateEditRow; FForce := True; FDirty := True; end
+            else begin FEditRow := ri; FDirty := True; end;
+          end;
+        end;
+      end;
+    mDetail: ;   { clicks in the body do nothing; status bar handled above }
   end;
 end;
 
@@ -915,7 +1087,10 @@ begin
       if PollKeyEvent <> 0 then
         HandleKey(TranslateKeyEvent(GetKeyEvent))
       else if FHasMouse and PollMouseEvent(M) then
-        HandleMouse(M)
+      begin
+        GetMouseEvent(M);   { PollMouseEvent only peeks; dequeue it or the }
+        HandleMouse(M);     { queue head (a move event) blocks all clicks }
+      end
       else
         Sleep(15);
     until FQuit;
