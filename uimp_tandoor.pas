@@ -149,12 +149,24 @@ function GrabUrl(const S: string; out Url: string): Boolean;
 var
   p: Integer;
   low, tok: string;
+
+  { keep the earliest match, so an archive.org wrapper (whose path embeds the
+    original http:// URL) is taken whole rather than from the inner URL }
+  procedure Earliest(const Needle: string);
+  var
+    q: Integer;
+  begin
+    q := Pos(Needle, low);
+    if (q > 0) and ((p = 0) or (q < p)) then p := q;
+  end;
+
 begin
   Url := '';
   low := LowerCase(S);
-  p := Pos('http://', low);
-  if p = 0 then p := Pos('https://', low);
-  if p = 0 then p := Pos('www.', low);
+  p := 0;
+  Earliest('https://');
+  Earliest('http://');
+  Earliest('www.');
   if p = 0 then Exit(False);
   tok := Copy(S, p, Length(S));
   tok := StringReplace(tok, ' ', '', [rfReplaceAll]);
@@ -173,8 +185,14 @@ end;
 function IsJunkPara(const P: string; out Url: string): Boolean;
 begin
   Url := '';
-  if StartsCI('recipe from', P) or StartsCI('recipe by', P) or StartsCI('source:', P)
-     or StartsCI('adapted from', P) or StartsCI('from:', P) or StartsCI('###', P)
+  { only start-anchored markers here: a run-on Meal-Master dump puts the whole
+    method and its attribution in one paragraph, so a "contains" test would drop
+    the method with it; embedded attribution is cut at the sentence level }
+  if StartsCI('recipe from', P) or StartsCI('recipe by', P)
+     or StartsCI('recipe source', P) or StartsCI('source:', P)
+     or StartsCI('posted by', P) or StartsCI('adapted from', P)
+     or StartsCI('an original recipe by', P) or StartsCI('from:', P)
+     or StartsCI('###', P)
      or GrabUrl(P, Url) then
   begin
     GrabUrl(P, Url);
@@ -231,57 +249,143 @@ begin
   if start <= Length(P) then Emit(start, Length(P));
 end;
 
+{ True for a sentence that is source/attribution boilerplate rather than a
+  cooking instruction, so it can be dropped from a run-on method. }
+function IsAttributionSentence(const S: string): Boolean;
+var
+  t: string;
+begin
+  t := Trim(S);
+  Result :=
+    StartsCI('recipe by', t) or StartsCI('recipe from', t)
+    or StartsCI('recipe source', t) or StartsCI('source:', t)
+    or StartsCI('posted by', t) or StartsCI('adapted from', t)
+    or StartsCI('an original recipe by', t) or StartsCI('from:', t)
+    or HasCI('<gopher:', t) or HasCI('<news:', t) or HasCI('<http', t)
+    or HasCI('uncle dirty dave', t)
+    or HasCI('wherever you go, there you are', t);
+end;
+
+{ Sentence-split content, but stop at the first attribution sentence: the real
+  method always precedes its attribution, and anything after it is boilerplate
+  or a corrupted duplicate of the method, so it is dropped. }
+procedure AddCleanSentences(const P: string; Steps: TStrings);
+var
+  tmp: TStringList;
+  i: Integer;
+begin
+  tmp := TStringList.Create;
+  try
+    tmp.TextLineBreakStyle := tlbsLF;
+    SplitSentences(P, tmp);
+    { drop only the attribution sentences, keeping what surrounds them: real
+      method can follow an embedded attribution (e.g. "From: ... " mid-recipe),
+      so cutting to the end here would discard genuine steps }
+    for i := 0 to tmp.Count - 1 do
+      if not IsAttributionSentence(tmp[i]) then Steps.Add(tmp[i]);
+  finally
+    tmp.Free;
+  end;
+end;
+
 { Turn a Tandoor instruction blob into clean steps: split into blank-line
-  paragraphs, drop junk (attribution/nutrition/BBS) capturing any URL, and
-  sentence-split the rest. }
+  paragraphs, rejoin a URL wrapped across paragraphs, drop junk
+  (attribution/nutrition/BBS) capturing any URL, and sentence-split the rest
+  (cutting each content run at its first attribution sentence). }
 procedure CleanInstruction(const S: string; Steps: TStrings; var Url: string);
 var
-  lines: TStringList;
+  raw, paras: TStringList;
   i: Integer;
-  para, u, contentBuf: string;
+  cur, u, contentBuf: string;
 
-  { sentence-split the accumulated content and start fresh }
+  { collapse the blob into blank-line-separated paragraphs (lines within a
+    paragraph are space-joined) }
+  procedure BuildParas;
+  var
+    j: Integer;
+    acc: string;
+  begin
+    acc := '';
+    for j := 0 to raw.Count - 1 do
+      if Trim(raw[j]) = '' then
+      begin
+        if acc <> '' then begin paras.Add(acc); acc := ''; end;
+      end
+      else if acc = '' then acc := Trim(raw[j])
+      else acc := acc + ' ' + Trim(raw[j]);
+    if acc <> '' then paras.Add(acc);
+  end;
+
+  { true if the paragraph opens an angle-bracketed URL ("<http...", "<www...",
+    etc.) that is not yet closed by ">" on the same paragraph }
+  function OpensUrlBracket(const P: string): Boolean;
+  var
+    lp: string;
+  begin
+    lp := LowerCase(P);
+    Result := ((Pos('<http', lp) > 0) or (Pos('<www', lp) > 0)
+               or (Pos('<ftp', lp) > 0) or (Pos('<gopher', lp) > 0)
+               or (Pos('<news', lp) > 0))
+              and (Pos('>', P) = 0);
+  end;
+
+  { a "<...>" URL can be wrapped across blank-separated paragraphs; merge
+    following paragraphs into one that opened such a URL until its closing ">".
+    Gated on a real scheme so a stray "<" in corrupted text does not swallow
+    following paragraphs. }
+  procedure MergeWrappedUrls;
+  var
+    j: Integer;
+  begin
+    j := 0;
+    while j < paras.Count do
+    begin
+      if OpensUrlBracket(paras[j]) then
+        while (j + 1 < paras.Count) and (Pos('>', paras[j]) = 0) do
+        begin
+          paras[j] := paras[j] + ' ' + paras[j + 1];
+          paras.Delete(j + 1);
+        end;
+      Inc(j);
+    end;
+  end;
+
+  { sentence-split the accumulated content (stopping at attribution) and reset }
   procedure FlushContent;
   begin
     if contentBuf <> '' then
     begin
-      SplitSentences(contentBuf, Steps);
+      AddCleanSentences(contentBuf, Steps);
       contentBuf := '';
     end;
   end;
 
-  { a blank line ended a paragraph: drop junk (flushing content first so it
-    breaks the running method), or fold content paragraphs together so a method
-    wrapped across blank-separated lines rejoins before sentence splitting }
-  procedure FlushPara;
-  begin
-    if para = '' then Exit;
-    if IsJunkPara(para, u) then
-    begin
-      FlushContent;
-      if (u <> '') and (Url = '') then Url := u;
-    end
-    else if contentBuf = '' then contentBuf := para
-    else contentBuf := contentBuf + ' ' + para;
-    para := '';
-  end;
-
 begin
-  lines := TStringList.Create;
+  raw := TStringList.Create;
+  paras := TStringList.Create;
   try
-    lines.TextLineBreakStyle := tlbsLF;
-    lines.Text := StringReplace(StringReplace(S, #13#10, #10, [rfReplaceAll]),
-                                #13, #10, [rfReplaceAll]);
-    para := '';
+    raw.TextLineBreakStyle := tlbsLF;
+    raw.Text := StringReplace(StringReplace(S, #13#10, #10, [rfReplaceAll]),
+                              #13, #10, [rfReplaceAll]);
+    BuildParas;
+    MergeWrappedUrls;
     contentBuf := '';
-    for i := 0 to lines.Count - 1 do
-      if Trim(lines[i]) = '' then FlushPara
-      else if para = '' then para := Trim(lines[i])
-      else para := para + ' ' + Trim(lines[i]);
-    FlushPara;
+    for i := 0 to paras.Count - 1 do
+    begin
+      cur := paras[i];
+      if IsJunkPara(cur, u) then
+      begin
+        { flush first so the junk breaks the running method }
+        FlushContent;
+        if (u <> '') and (Url = '') then Url := u;
+      end
+      else if contentBuf = '' then contentBuf := cur
+      else contentBuf := contentBuf + ' ' + cur;
+    end;
     FlushContent;
   finally
-    lines.Free;
+    paras.Free;
+    raw.Free;
   end;
 end;
 
