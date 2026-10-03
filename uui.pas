@@ -276,7 +276,7 @@ begin
   status := ' scroll  e edit  d delete';
   if FLib.Recipe(FDetailIdx).SourceUrl <> '' then status := status + '  o source';
   if FLib.ImageBasename(FDetailIdx) <> '' then status := status + '  i image';
-  status := status + '  Bksp back  q quit';
+  status := status + '  q back  F10 quit';
   PutStr(0, ScreenHeight - 1, status, AttrStatus);
 end;
 
@@ -745,9 +745,9 @@ begin
   end;
 end;
 
-{ Go back from detail to list, or clear the search when on the list. This is
-  the "cancel" action, reachable by Backspace (on an empty query) and by the
-  best-effort Esc code. }
+{ Go back from detail to list, or clear the search when on the list. From the
+  detail view this is reached by q, Enter, or the best-effort Esc; on the list
+  (where typing edits the search) it is reached by Esc. }
 procedure TBrowser.CancelOrBack;
 begin
   if FMode = mDetail then
@@ -828,8 +828,8 @@ begin
     end
   else
     case ch of
-      #13, #8, #27: CancelOrBack;                        { Enter / Backspace / Esc: back }
-      #17, 'q', 'Q': FQuit := True;                      { letters are free here }
+      #13, #27, 'q', 'Q': CancelOrBack;                  { Enter / Esc / q: back to list }
+      #17: FQuit := True;                                { Ctrl-Q quits (F10 quits anywhere) }
       'e', 'E': EnterEdit(FDetailIdx);
       'd', 'D': DeleteIndex(FDetailIdx);
       'o', 'O':
