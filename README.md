@@ -7,11 +7,18 @@ static website you can put online — no HTML or database knowledge needed.
 Built in Free Pascal (FPC 3.2.2). One source compiles natively on Linux and
 cross-compiles to Windows.
 
+## Download
+
+Prebuilt **Windows** installer on the
+[latest release](https://github.com/shighfield/tiecook/releases/latest)
+(`tiecook2-setup.exe`). On **Linux**, build from source (below).
+
 ## Build
 
 ```
 make            # native binary: ./tiecook2
 make win        # Windows binary: tiecook2.exe + OpenSSL DLLs
+make installer  # Windows installer: tiecook2-setup.exe (needs makensis)
 make test       # run the unit tests
 ```
 
