@@ -63,6 +63,9 @@ run). Re-importing updates recipes in place by their Tandoor id.
 groups, one page per recipe, a shared `style.css`, and copied images. It
 writes only into a directory it created (marked with `.tiecook2-site`) and
 refuses to overwrite anything else, so it can't clobber an existing site.
+Each run also prunes pages and images left behind by recipes you've since
+deleted or renamed, so re-exporting over a previous site stays clean — you
+don't need to empty the directory first.
 
 ## Browse
 
