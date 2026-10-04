@@ -108,6 +108,8 @@ type
     procedure ActivateEditRow;
     procedure AddEditItem;
     procedure DeleteEditItem;
+    procedure ReplaceStepWithProse(Idx: Integer; const S: string);
+    procedure InsertStepsAfter(Idx: Integer; const S: string);
     procedure SetEditImage;
     procedure SetDetailImage;
   public
@@ -198,6 +200,35 @@ begin
     Result := True;
   except
     on E: Exception do Result := False;
+  end;
+end;
+
+{ Split edited prose into paragraphs: a blank line starts a new paragraph, and
+  the wrapped lines within a paragraph are rejoined with spaces. Used so that a
+  blank line in the step editor makes a new, separate step. }
+procedure SplitProseParagraphs(const S: string; Dest: TStrings);
+var
+  lines: TStringList;
+  i: Integer;
+  para: string;
+begin
+  Dest.Clear;
+  lines := TStringList.Create;
+  try
+    lines.TextLineBreakStyle := tlbsLF;
+    lines.Text := StringReplace(StringReplace(S, #13#10, #10, [rfReplaceAll]),
+                                #13, #10, [rfReplaceAll]);
+    para := '';
+    for i := 0 to lines.Count - 1 do
+      if Trim(lines[i]) = '' then
+      begin
+        if para <> '' then begin Dest.Add(para); para := ''; end;
+      end
+      else if para = '' then para := Trim(lines[i])
+      else para := para + ' ' + Trim(lines[i]);
+    if para <> '' then Dest.Add(para);
+  finally
+    lines.Free;
   end;
 end;
 
@@ -754,9 +785,9 @@ begin
     erIngAdd:    if PromptText('New ingredient: ', v) and (Trim(v) <> '') then
                  begin InsertIngredient(FEdit, Length(FEdit.Ingredients), v); BuildEditRows; end;
     erStep:      begin s := FEdit.Steps[row.Idx]; EditProseText(s);
-                   if Trim(s) <> '' then FEdit.Steps[row.Idx] := s; end;
+                   if Trim(s) <> '' then ReplaceStepWithProse(row.Idx, s); end;
     erStepAdd:   begin s := ''; EditProseText(s);
-                   if Trim(s) <> '' then begin AddStep(FEdit, s); BuildEditRows; end; end;
+                   if Trim(s) <> '' then InsertStepsAfter(High(FEdit.Steps), s); end;
   end;
 end;
 
@@ -776,7 +807,7 @@ begin
   else if row.Kind = erStep then
   begin
     s := ''; EditProseText(s);
-    if Trim(s) <> '' then begin InsertStep(FEdit, row.Idx + 1, s); BuildEditRows; EditMove(1); end;
+    if Trim(s) <> '' then begin InsertStepsAfter(row.Idx, s); EditMove(1); end;
   end;
 end;
 
@@ -789,6 +820,43 @@ begin
   row := FEditRows[FEditRow];
   if row.Kind = erIng then begin DeleteIngredient(FEdit, row.Idx); BuildEditRows; end
   else if row.Kind = erStep then begin DeleteStep(FEdit, row.Idx); BuildEditRows; end;
+end;
+
+{ Replace the step at Idx with the edited prose, splitting it into one step per
+  blank-line-separated paragraph (so a blank line makes a new numbered step). }
+procedure TBrowser.ReplaceStepWithProse(Idx: Integer; const S: string);
+var
+  parts: TStringList;
+  i: Integer;
+begin
+  parts := TStringList.Create;
+  try
+    SplitProseParagraphs(S, parts);
+    if parts.Count = 0 then Exit;
+    FEdit.Steps[Idx] := parts[0];
+    for i := 1 to parts.Count - 1 do
+      InsertStep(FEdit, Idx + i, parts[i]);
+    BuildEditRows;
+  finally
+    parts.Free;
+  end;
+end;
+
+{ Insert the edited prose as one or more steps after Idx (one per paragraph). }
+procedure TBrowser.InsertStepsAfter(Idx: Integer; const S: string);
+var
+  parts: TStringList;
+  i: Integer;
+begin
+  parts := TStringList.Create;
+  try
+    SplitProseParagraphs(S, parts);
+    for i := 0 to parts.Count - 1 do
+      InsertStep(FEdit, Idx + 1 + i, parts[i]);
+    BuildEditRows;
+  finally
+    parts.Free;
+  end;
 end;
 
 { Editor "Image" row: prompt for a photo to attach (blank removes the current
