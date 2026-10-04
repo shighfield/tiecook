@@ -169,12 +169,23 @@ end;
 
 { --- line classification --- }
 
+{ The recipe header, e.g. "MMMMM----- Recipe via Meal-Master (tm) v8.06".
+  Must be distinguished from an ingredient sub-heading, which also begins with
+  "MMMMM-" (e.g. "MMMMM-----VARIATION WITH PEAS-----"); only the header carries
+  the "Recipe via" / "Meal-Master" banner, so match on that. }
 function IsStartMarker(const Line: string): Boolean;
 var
-  t: string;
+  t, low: string;
 begin
   t := TrimLeft(Line);
-  Result := (Length(t) >= 6) and (Copy(t, 1, 5) = 'MMMMM') and (t[6] = '-');
+  Result := False;
+  if (Length(t) >= 6) and (Copy(t, 1, 5) = 'MMMMM') and (t[6] = '-') then
+  begin
+    low := LowerCase(t);
+    Result := (Pos('recipe via', low) > 0)
+           or (Pos('meal-master', low) > 0)
+           or (Pos('mealmaster', low) > 0);
+  end;
 end;
 
 function IsEndMarker(const Line: string): Boolean;
@@ -364,7 +375,7 @@ end;
 
 function ParseBlock(Block: TStringList): TRecipe;
 var
-  i, ingStart: Integer;
+  i, j, ingStart: Integer;
   lbl, val, secName, para: string;
 begin
   InitRecipe(Result);
@@ -385,9 +396,21 @@ begin
   i := ingStart;
   while (i < Block.Count) and (Trim(Block[i]) = '') do Inc(i);
 
-  { ingredients: until the next blank line }
-  while (i < Block.Count) and (Trim(Block[i]) <> '') do
+  { ingredients: until a blank line that is NOT followed by a section divider.
+    Some files offset a sub-section (e.g. "MMMMM-----VARIATION WITH PEAS-----")
+    with a blank line; keep treating what follows as ingredients, not the start
+    of the directions. }
+  while i < Block.Count do
   begin
+    if Trim(Block[i]) = '' then
+    begin
+      j := i + 1;
+      while (j < Block.Count) and (Trim(Block[j]) = '') do Inc(j);
+      if (j < Block.Count) and DashSection(Block[j], secName) then
+        i := j                       { resume at the divider }
+      else
+        Break;                       { blank with no divider -> directions }
+    end;
     if DashSection(Block[i], secName) then
       AddIngredient(Result, secName, True)
     else if IsContinuation(Block[i]) and (Length(Result.Ingredients) > 0) then
