@@ -100,9 +100,13 @@ one, `d` deletes it, `[` and `]` move it up or down, **F2 saves**, **F10
 cancels** (discarding changes). Click a row to select it, click it again to
 edit it, and the wheel scrolls. Longer prose — a step's text or the
 description — opens in your editor (config `[editor] command`, else `$VISUAL` /
-`$EDITOR` / `nano` / `notepad`) on just that text. The recipe is always written
-in a clean canonical layout; in the description and steps, wrapped lines flow
-together and a blank line makes a paragraph break.
+`$EDITOR` / `nano` / `notepad`) on just that text. When you edit (or add) a
+step, **separating the text with a blank line splits it into several numbered
+steps** — one per paragraph — so you can break a wall of text into steps right
+in your editor. Step numbers are generated automatically for display; you never
+type them. The recipe is always written in a clean canonical layout; in the
+description, wrapped lines flow together and a blank line makes a paragraph
+break.
 
 Delete removes the recipe file and its photo; there is no undo, hence the
 confirmation.
