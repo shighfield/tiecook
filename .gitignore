@@ -10,6 +10,7 @@ tiecook-setup.exe
 *.dll
 AppDir/
 *.AppImage
+.tools/
 
 # user's own recipes, used only as local test input
 samples/

@@ -21,7 +21,11 @@ GCCLIB := $(shell dirname $$(gcc -print-file-name=crtendS.o))
 
 .PHONY: all linux win installer appimage run test clean
 
+# AppImage packaging. If appimagetool isn't on PATH it is fetched once into
+# .tools/ (override with APPIMAGETOOL=/path/to/appimagetool to use your own).
 APPIMAGETOOL ?= appimagetool
+APPIMAGETOOL_URL := https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+TOOLDIR := .tools
 
 all: linux
 
@@ -42,18 +46,29 @@ installer: win config.example installer.nsi
 	makensis installer.nsi
 
 # Linux AppImage: tiecook-x86_64.AppImage — a single portable executable for
-# people who don't want to build from source. Needs appimagetool (set
-# APPIMAGETOOL= if it's not on PATH). The binary itself only needs libc;
-# OpenSSL is bundled so "import tandoor" works on any distro.
+# people who don't want to build from source. appimagetool is fetched to
+# .tools/ if it isn't on PATH. The binary itself only needs libc; OpenSSL is
+# bundled so "import tandoor" works on any distro.
 appimage: linux appimage/AppRun appimage/tiecook.desktop appimage/tiecook.png
-	rm -rf AppDir
-	mkdir -p AppDir/usr/bin AppDir/usr/lib
-	cp $(BIN) AppDir/usr/bin/tiecook
-	cp -L /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3 AppDir/usr/lib/
-	install -m755 appimage/AppRun AppDir/AppRun
-	cp appimage/tiecook.desktop AppDir/tiecook.desktop
-	cp appimage/tiecook.png AppDir/tiecook.png
-	ARCH=x86_64 $(APPIMAGETOOL) AppDir tiecook-x86_64.AppImage
+	@set -e; \
+	tool="$(APPIMAGETOOL)"; \
+	if ! command -v "$$tool" >/dev/null 2>&1; then \
+	  tool="$(TOOLDIR)/appimagetool"; \
+	  if [ ! -x "$$tool" ]; then \
+	    echo "appimagetool not on PATH; fetching it into $(TOOLDIR)/ ..."; \
+	    mkdir -p "$(TOOLDIR)"; \
+	    curl -fsSL -o "$$tool" "$(APPIMAGETOOL_URL)"; \
+	    chmod +x "$$tool"; \
+	  fi; \
+	fi; \
+	rm -rf AppDir; \
+	mkdir -p AppDir/usr/bin AppDir/usr/lib; \
+	cp $(BIN) AppDir/usr/bin/tiecook; \
+	cp -L /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3 AppDir/usr/lib/; \
+	install -m755 appimage/AppRun AppDir/AppRun; \
+	cp appimage/tiecook.desktop AppDir/tiecook.desktop; \
+	cp appimage/tiecook.png AppDir/tiecook.png; \
+	APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$$tool" AppDir tiecook-x86_64.AppImage; \
 	rm -rf AppDir
 
 run: linux
