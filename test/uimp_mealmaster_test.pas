@@ -119,6 +119,47 @@ begin
   else
     Check(False, 'attribution test recipe parsed');
 
+  { a FidoNet post: message header before the recipe, an ingredient sub-section
+    ("VARIATION WITH PEAS") offset from the main ingredients by a blank line,
+    and a BBS footer after the end marker. The sub-section must NOT be taken for
+    the start of a second recipe, and must stay in the ingredients. }
+  R := ImportMealMasterText(
+    '========================================================' + CRLF +
+    '   Area: Fidonet - Cooking' + CRLF +
+    '   Subj: Kapusnyak (Sauerkraut Soup)' + CRLF +
+    '--------------------------------------------------------' + CRLF +
+    'MMMMM----- Recipe via Meal-Master (tm) v8.06' + CRLF + CRLF +
+    '      Title: Kapusnyak (Sauerkraut Soup)' + CRLF +
+    ' Categories: Soups, Ukrainian' + CRLF +
+    '      Yield: 1 Batch' + CRLF + CRLF +
+    '    1/2 lb Smoked pork shank or' + CRLF +
+    '           - fresh spare ribs' + CRLF +
+    '      3 c  Sauerkraut' + CRLF + CRLF +
+    'MMMMM--------------------VARIATION WITH PEAS-------------------------' + CRLF +
+    '    1/2 c  Dried peas; or more, cooked' + CRLF + CRLF +
+    '  Wash the meat, cover with water, and simmer until tender.' + CRLF + CRLF +
+    '  Recipe by Mrs. H. Worobetz, Saskatoon' + CRLF + CRLF +
+    '  Recipe FROM: Traditional Ukrainian Cookery, 1976' + CRLF +
+    'MMMMM' + CRLF + CRLF +
+    '    Wherever you go, there you are!' + CRLF +
+    '--- MBSE BBS v1.1.7.2 (Linux-x86_64)' + CRLF +
+    ' * Origin: Outpost BBS * Johnson City, TN (1:18/200)' + CRLF);
+  Check(Length(R) = 1, 'variation sub-section is not split into a 2nd recipe');
+  if Length(R) = 1 then
+  begin
+    Check(R[0].Title = 'Kapusnyak (Sauerkraut Soup)', 'fidonet recipe title');
+    Check(Length(R[0].Ingredients) = 4, 'variation section stays in the ingredients');
+    Check(R[0].Ingredients[0].Text = '1/2 lb Smoked pork shank or fresh spare ribs',
+          'continuation folded across the first ingredient');
+    Check((Length(R[0].Ingredients) = 4) and R[0].Ingredients[2].IsSection
+          and (R[0].Ingredients[2].Text = 'VARIATION WITH PEAS'),
+          'MMMMM divider -> ingredient section header, not a recipe boundary');
+    Check((Length(R[0].Ingredients) = 4) and (not R[0].Ingredients[3].IsSection)
+          and (R[0].Ingredients[3].Text = '1/2 cup Dried peas; or more, cooked'),
+          'peas ingredient kept under the variation header');
+    Check(Length(R[0].Steps) = 1, 'one directions paragraph -> one step, attribution dropped');
+  end;
+
   { slug helper }
   Check(Slugify('Easy Chicken Teriyaki') = 'easy-chicken-teriyaki', 'slugify spaces');
   Check(Slugify('GF Quiche  & Pie Crust!') = 'gf-quiche-pie-crust', 'slugify punctuation');
