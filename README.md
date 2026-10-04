@@ -9,9 +9,14 @@ cross-compiles to Windows.
 
 ## Download
 
-Prebuilt **Windows** installer on the
-[latest release](https://github.com/shighfield/tiecook/releases/latest)
-(`tiecook-setup.exe`). On **Linux**, build from source (below).
+Prebuilt binaries are on the
+[latest release](https://github.com/shighfield/tiecook/releases/latest):
+
+- **Windows:** `tiecook-setup.exe` (installer).
+- **Linux:** `tiecook-x86_64.AppImage` — `chmod +x` it and run it from a
+  terminal (it's a terminal app); OpenSSL is bundled so Tandoor import works.
+
+Or build from source (below).
 
 ## Build
 
@@ -19,6 +24,7 @@ Prebuilt **Windows** installer on the
 make            # native binary: ./tiecook
 make win        # Windows binary: tiecook.exe + OpenSSL DLLs
 make installer  # Windows installer: tiecook-setup.exe (needs makensis)
+make appimage   # Linux AppImage: tiecook-x86_64.AppImage (needs appimagetool)
 make test       # run the unit tests
 ```
 

@@ -19,7 +19,9 @@ WIN_DLLS := libssl-1_1-x64.dll libcrypto-1_1-x64.dll libssp-0.dll
 # gcc where they are (the versioned dir moves with gcc updates).
 GCCLIB := $(shell dirname $$(gcc -print-file-name=crtendS.o))
 
-.PHONY: all linux win installer run test clean
+.PHONY: all linux win installer appimage run test clean
+
+APPIMAGETOOL ?= appimagetool
 
 all: linux
 
@@ -39,6 +41,21 @@ $(WINBIN): *.pas
 installer: win config.example installer.nsi
 	makensis installer.nsi
 
+# Linux AppImage: tiecook-x86_64.AppImage — a single portable executable for
+# people who don't want to build from source. Needs appimagetool (set
+# APPIMAGETOOL= if it's not on PATH). The binary itself only needs libc;
+# OpenSSL is bundled so "import tandoor" works on any distro.
+appimage: linux appimage/AppRun appimage/tiecook.desktop appimage/tiecook.png
+	rm -rf AppDir
+	mkdir -p AppDir/usr/bin AppDir/usr/lib
+	cp $(BIN) AppDir/usr/bin/tiecook
+	cp -L /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3 AppDir/usr/lib/
+	install -m755 appimage/AppRun AppDir/AppRun
+	cp appimage/tiecook.desktop AppDir/tiecook.desktop
+	cp appimage/tiecook.png AppDir/tiecook.png
+	ARCH=x86_64 $(APPIMAGETOOL) AppDir tiecook-x86_64.AppImage
+	rm -rf AppDir
+
 run: linux
 	./$(BIN)
 
@@ -46,4 +63,5 @@ test:
 	@bash test/run_tests.sh
 
 clean:
-	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) tiecook-setup.exe test/.build
+	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) tiecook-setup.exe \
+	       AppDir tiecook-x86_64.AppImage test/.build
