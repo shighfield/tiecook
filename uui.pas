@@ -346,7 +346,7 @@ begin
   FillRow(0, AttrTitle);
   title := FCfg.SiteTitle;
   if Trim(title) = '' then title := 'Recipe Library';
-  PutStr(1, 0, 'tiecook2  -  ' + Disp(title), AttrTitle);
+  PutStr(1, 0, 'tiecook  -  ' + Disp(title), AttrTitle);
 
   { search line + caret }
   PutStr(0, 1, 'Search: ' + Disp(FQuery), AttrNormal);
@@ -433,13 +433,13 @@ end;
 procedure TBrowser.ShowTitle;
 const
   AttrBanner = 11;   { light cyan on black }
-  BannerW = 39;
+  BannerW = 33;
   Banner: array[0..4] of string = (
-    ' _   _                      _    ____',
-    '| |_(_) ___  ___ ___   ___ | | _|___ \',
-    '| __| |/ _ \/ __/ _ \ / _ \| |/ / __) |',
-    '| |_| |  __/ (_| (_) | (_) |   < / __/',
-    ' \__|_|\___|\___\___/ \___/|_|\_\_____|');
+    ' _   _                      _',
+    '| |_(_) ___  ___ ___   ___ | | __',
+    '| __| |/ _ \/ __/ _ \ / _ \| |/ /',
+    '| |_| |  __/ (_| (_) | (_) |   <',
+    ' \__|_|\___|\___\___/ \___/|_|\_\');
 var
   top, x, i, cy: Integer;
   sub: string;

@@ -1,6 +1,6 @@
 unit uconfig;
 
-{ tiecook2 configuration: an INI file under the user's config dir.
+{ tiecook configuration: an INI file under the user's config dir.
 
     [library]
     dir=<recipe library path>
@@ -23,8 +23,8 @@ unit uconfig;
   marks highlighted recipes. Comments in the file must be on their own line
   starting with ';' - TIniFile keeps any trailing "; ..." as part of the value.
 
-  Location: $XDG_CONFIG_HOME/tiecook2/config.ini (or ~/.config/tiecook2/...)
-  on unix, %APPDATA%\tiecook2\config.ini on Windows. }
+  Location: $XDG_CONFIG_HOME/tiecook/config.ini (or ~/.config/tiecook/...)
+  on unix, %APPDATA%\tiecook\config.ini on Windows. }
 
 {$mode objfpc}{$H+}
 
@@ -73,7 +73,7 @@ uses
 function AppData(const Leaf: string): string;
 begin
   Result := IncludeTrailingPathDelimiter(GetEnvironmentVariable('APPDATA'))
-            + 'tiecook2\' + Leaf;
+            + 'tiecook\' + Leaf;
 end;
 
 function DefaultConfigFile: string;
@@ -108,12 +108,12 @@ end;
 
 function DefaultConfigFile: string;
 begin
-  Result := IncludeTrailingPathDelimiter(ConfigBase) + 'tiecook2/config.ini';
+  Result := IncludeTrailingPathDelimiter(ConfigBase) + 'tiecook/config.ini';
 end;
 
 function DefaultLibraryDir: string;
 begin
-  Result := IncludeTrailingPathDelimiter(DataBase) + 'tiecook2/recipes';
+  Result := IncludeTrailingPathDelimiter(DataBase) + 'tiecook/recipes';
 end;
 
 function TiecookConfigFile: string;

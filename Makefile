@@ -1,4 +1,4 @@
-# tiecook2 — standalone recipe library: import, then browse
+# tiecook — standalone recipe library: import, then browse
 #
 # The native x86_64 ppcx64 targets win64 directly; FPC's internal linker
 # emits the PE, so `make win` needs no mingw toolchain. The Tandoor importer
@@ -7,10 +7,10 @@
 # package). Ship all four files together.
 
 FPC     ?= fpc
-MAIN    := tiecook2.pas
+MAIN    := tiecook.pas
 OPTS    := -Mobjfpc -Sh -O2 -vw
-BIN     := tiecook2
-WINBIN  := tiecook2.exe
+BIN     := tiecook
+WINBIN  := tiecook.exe
 
 MINGW_SYSROOT := /usr/x86_64-w64-mingw32/bin
 WIN_DLLS := libssl-1_1-x64.dll libcrypto-1_1-x64.dll libssp-0.dll
@@ -34,7 +34,7 @@ $(WINBIN): *.pas
 	$(FPC) -Twin64 $(OPTS) -FUunits-win64 -o$(WINBIN) $(MAIN)
 	@for dll in $(WIN_DLLS); do cp -u $(MINGW_SYSROOT)/$$dll . ; done
 
-# Windows installer: tiecook2-setup.exe (needs makensis). Builds the Windows
+# Windows installer: tiecook-setup.exe (needs makensis). Builds the Windows
 # exe + DLLs first, then packages them with config.example.
 installer: win config.example installer.nsi
 	makensis installer.nsi
@@ -46,4 +46,4 @@ test:
 	@bash test/run_tests.sh
 
 clean:
-	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) tiecook2-setup.exe test/.build
+	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) tiecook-setup.exe test/.build

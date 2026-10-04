@@ -9,7 +9,7 @@ unit uexport_html;
                           source link, print button)
     <out>/style.css       shared stylesheet
     <out>/images/...      copied recipe photos + header/background
-    <out>/.tiecook2-site  marker proving we own this directory
+    <out>/.tiecook-site   marker proving we own this directory
 
   Look and structure mirror the user's old ~/html site, but the site title,
   intro, footer, images and the personal/favorite keywords all come from
@@ -36,7 +36,8 @@ uses
   Classes;
 
 const
-  Marker = '.tiecook2-site';
+  Marker = '.tiecook-site';
+  LegacyMarker = '.tiecook2-site';   { pre-rename sites are still recognised as ours }
 
 { --- helpers --- }
 
@@ -449,14 +450,18 @@ var
   R: TRecipe;
   keptPages, keptImages: TStringList;
 begin
-  { safety: never overwrite a non-empty directory we did not create }
+  { safety: never overwrite a non-empty directory we did not create (a site
+    made before the rename carries the legacy marker and still counts as ours) }
   markerPath := IncludeTrailingPathDelimiter(OutDir) + Marker;
-  if DirectoryExists(OutDir) and not DirIsEmpty(OutDir) and not FileExists(markerPath) then
+  if DirectoryExists(OutDir) and not DirIsEmpty(OutDir)
+     and not FileExists(markerPath)
+     and not FileExists(IncludeTrailingPathDelimiter(OutDir) + LegacyMarker) then
     raise EExportUnsafe.Create(
-      'refusing to write into non-empty directory not created by tiecook2: ' + OutDir);
+      'refusing to write into non-empty directory not created by tiecook: ' + OutDir);
 
   ForceDirectories(OutDir);
-  WriteTextFile(markerPath, 'tiecook2 static site' + #10);
+  WriteTextFile(markerPath, 'tiecook static site' + #10);
+  DeleteFile(IncludeTrailingPathDelimiter(OutDir) + LegacyMarker);  { drop the old marker }
   outp := IncludeTrailingPathDelimiter(OutDir);
   imgdir := outp + 'images';
 
