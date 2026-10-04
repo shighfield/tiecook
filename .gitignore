@@ -6,6 +6,7 @@ units-win64/
 *.rsj
 tiecook2
 tiecook2.exe
+tiecook2-setup.exe
 *.dll
 
 # user's own recipes, used only as local test input

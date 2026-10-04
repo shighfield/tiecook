@@ -19,7 +19,7 @@ WIN_DLLS := libssl-1_1-x64.dll libcrypto-1_1-x64.dll libssp-0.dll
 # gcc where they are (the versioned dir moves with gcc updates).
 GCCLIB := $(shell dirname $$(gcc -print-file-name=crtendS.o))
 
-.PHONY: all linux win run test clean
+.PHONY: all linux win installer run test clean
 
 all: linux
 
@@ -34,6 +34,11 @@ $(WINBIN): *.pas
 	$(FPC) -Twin64 $(OPTS) -FUunits-win64 -o$(WINBIN) $(MAIN)
 	@for dll in $(WIN_DLLS); do cp -u $(MINGW_SYSROOT)/$$dll . ; done
 
+# Windows installer: tiecook2-setup.exe (needs makensis). Builds the Windows
+# exe + DLLs first, then packages them with config.example.
+installer: win config.example installer.nsi
+	makensis installer.nsi
+
 run: linux
 	./$(BIN)
 
@@ -41,4 +46,4 @@ test:
 	@bash test/run_tests.sh
 
 clean:
-	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) test/.build
+	rm -rf units units-win64 $(BIN) $(WINBIN) $(WIN_DLLS) tiecook2-setup.exe test/.build

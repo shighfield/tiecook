@@ -1,0 +1,34 @@
+; tiecook2 configuration
+; Put comments on their own line starting with ';' — anything after key= is
+; taken as part of the value.
+
+[library]
+; recipe library location (blank = default data dir)
+dir=
+
+[tandoor]
+; used by "import tandoor"; a read-scope API token
+url=
+token=
+
+[site]
+; used by "export html"
+title=My Recipes
+intro=
+footer=
+; path to a banner image, copied into the site
+header_image=
+; path to a page background, copied into the site
+background_image=
+; recipes with this keyword form a highlighted section
+personal_keyword=
+; recipes with this keyword are highlighted
+favorite_keyword=Favorite
+
+[editor]
+; editor for the browser's edit command (blank = $VISUAL / $EDITOR / default)
+command=
+
+[ui]
+; show the ASCII-art title screen on launch
+splash=true
