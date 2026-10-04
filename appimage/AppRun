@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entry point: bundle our OpenSSL (for Tandoor import) and run the TUI.
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$HERE/usr/bin/tiecook" "$@"

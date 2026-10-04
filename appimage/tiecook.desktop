@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=tiecook
+Comment=Terminal recipe manager — import, browse, and export recipes
+Exec=tiecook
+Icon=tiecook
+Terminal=true
+Categories=Utility;

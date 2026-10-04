@@ -8,6 +8,8 @@ tiecook
 tiecook.exe
 tiecook-setup.exe
 *.dll
+AppDir/
+*.AppImage
 
 # user's own recipes, used only as local test input
 samples/
