@@ -1,4 +1,4 @@
-# tiecook2
+# tiecook
 
 A small, self-contained recipe manager: **import** recipes into a local
 library of plain-text files, **browse** them in a terminal, and **export** a
@@ -11,14 +11,14 @@ cross-compiles to Windows.
 
 Prebuilt **Windows** installer on the
 [latest release](https://github.com/shighfield/tiecook/releases/latest)
-(`tiecook2-setup.exe`). On **Linux**, build from source (below).
+(`tiecook-setup.exe`). On **Linux**, build from source (below).
 
 ## Build
 
 ```
-make            # native binary: ./tiecook2
-make win        # Windows binary: tiecook2.exe + OpenSSL DLLs
-make installer  # Windows installer: tiecook2-setup.exe (needs makensis)
+make            # native binary: ./tiecook
+make win        # Windows binary: tiecook.exe + OpenSSL DLLs
+make installer  # Windows installer: tiecook-setup.exe (needs makensis)
 make test       # run the unit tests
 ```
 
@@ -28,19 +28,19 @@ Requires FPC 3.2.2+ with the standard units (`video`, `keyboard`, `mouse`,
 The Tandoor importer links OpenSSL, so the native build needs OpenSSL
 installed, and `make win` copies three OpenSSL 1.1 DLLs
 (`libssl-1_1-x64.dll`, `libcrypto-1_1-x64.dll`, `libssp-0.dll`) beside
-`tiecook2.exe` — ship all four files together. Those DLLs come from a
+`tiecook.exe` — ship all four files together. Those DLLs come from a
 mingw-w64 OpenSSL 1.1 package; adjust `MINGW_SYSROOT` in the Makefile if
 yours lives elsewhere.
 
 ## Commands
 
 ```
-tiecook2                                   browse, edit and delete recipes (TUI)
-tiecook2 list [--library DIR]              list every recipe
-tiecook2 search [--library DIR] <words>    search titles/keywords/text
-tiecook2 import mealmaster [--library DIR] <file|dir>...
-tiecook2 import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]
-tiecook2 export html [--library DIR] <output-dir>
+tiecook                                   browse, edit and delete recipes (TUI)
+tiecook list [--library DIR]              list every recipe
+tiecook search [--library DIR] <words>    search titles/keywords/text
+tiecook import mealmaster [--library DIR] <file|dir>...
+tiecook import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]
+tiecook export html [--library DIR] <output-dir>
 ```
 
 `--library DIR` overrides the library location for one run; otherwise the
@@ -68,7 +68,7 @@ run). Re-importing updates recipes in place by their Tandoor id.
 `export html` regenerates a complete static site from the library: an
 `index.html` with a live search box, a personal section and alphabetical
 groups, one page per recipe, a shared `style.css`, and copied images. It
-writes only into a directory it created (marked with `.tiecook2-site`) and
+writes only into a directory it created (marked with `.tiecook-site`) and
 refuses to overwrite anything else, so it can't clobber an existing site.
 Each run also prunes pages and images left behind by recipes you've since
 deleted or renamed, so re-exporting over a previous site stays clean — you
@@ -76,7 +76,7 @@ don't need to empty the directory first.
 
 ## Browse
 
-Run `tiecook2` with no arguments.
+Run `tiecook` with no arguments.
 
 The mouse works throughout: the wheel scrolls, clicking selects (and a second
 click opens/edits), and the labels on the bottom status bar are clickable. A
@@ -127,11 +127,11 @@ keep full UTF-8.
 
 ## Configuration
 
-On first run tiecook2 writes a config file you can edit:
+On first run tiecook writes a config file you can edit:
 
-- Linux: `$XDG_CONFIG_HOME/tiecook2/config.ini` (usually
-  `~/.config/tiecook2/config.ini`)
-- Windows: `%APPDATA%\tiecook2\config.ini`
+- Linux: `$XDG_CONFIG_HOME/tiecook/config.ini` (usually
+  `~/.config/tiecook/config.ini`)
+- Windows: `%APPDATA%\tiecook\config.ini`
 
 Put comments on their own line starting with `;` — the INI reader treats
 anything after `key=` (including a trailing `; ...`) as part of the value.
@@ -176,7 +176,7 @@ recipe file — export picks it up and the browser can open it.
 ## Project layout
 
 ```
-tiecook2.pas       entry point / command dispatch
+tiecook.pas       entry point / command dispatch
 urecipe.pas        recipe model + plain-text file format
 uconfig.pas        config file (INI)
 ulibrary.pas       scan / index / search the library

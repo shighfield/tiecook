@@ -4,9 +4,9 @@ units-win64/
 *.o
 *.ppu
 *.rsj
-tiecook2
-tiecook2.exe
-tiecook2-setup.exe
+tiecook
+tiecook.exe
+tiecook-setup.exe
 *.dll
 
 # user's own recipes, used only as local test input

@@ -1,11 +1,11 @@
-program tiecook2;
+program tiecook;
 
 { Standalone recipe library.
 
-    tiecook2                                    browse the library (later)
-    tiecook2 list [--library DIR]               list all recipes
-    tiecook2 search [--library DIR] <words>     search titles/keywords/text
-    tiecook2 import mealmaster [--library DIR] <file|dir>...
+    tiecook                                    browse the library (later)
+    tiecook list [--library DIR]               list all recipes
+    tiecook search [--library DIR] <words>     search titles/keywords/text
+    tiecook import mealmaster [--library DIR] <file|dir>...
 
   The library directory defaults to the value in the config file. }
 
@@ -18,11 +18,11 @@ uses
 procedure Usage;
 begin
   WriteLn('usage:');
-  WriteLn('  tiecook2 list [--library DIR]');
-  WriteLn('  tiecook2 search [--library DIR] <words>');
-  WriteLn('  tiecook2 import mealmaster [--library DIR] <file|dir>...');
-  WriteLn('  tiecook2 import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]');
-  WriteLn('  tiecook2 export html [--library DIR] <output-dir>');
+  WriteLn('  tiecook list [--library DIR]');
+  WriteLn('  tiecook search [--library DIR] <words>');
+  WriteLn('  tiecook import mealmaster [--library DIR] <file|dir>...');
+  WriteLn('  tiecook import tandoor [--library DIR] [--url URL] [--token TOKEN] [--limit N]');
+  WriteLn('  tiecook export html [--library DIR] <output-dir>');
 end;
 
 { Load the config, creating a default file the first time so the user has
@@ -194,7 +194,7 @@ begin
       CollectMMFiles(Args[i], Files);
     if Files.Count = 0 then
     begin
-      WriteLn(StdErr, 'tiecook2: no .mmf files found'); Halt(1);
+      WriteLn(StdErr, 'tiecook: no .mmf files found'); Halt(1);
     end;
     total := ImportMealMasterFiles(Files, Lib, updated, @MMProgress);
     WriteLn(Format('Imported %d recipe(s) (%d updated) from %d file(s) into %s',
@@ -237,7 +237,7 @@ begin
 
     if (Trim(Cfg.TandoorUrl) = '') or (Trim(Cfg.TandoorToken) = '') then
     begin
-      WriteLn(StdErr, 'tiecook2: no Tandoor url/token. Set [tandoor] in ',
+      WriteLn(StdErr, 'tiecook: no Tandoor url/token. Set [tandoor] in ',
               Cfg.Path, ', pass --url/--token, or configure tiecook.');
       Halt(1);
     end;
@@ -257,7 +257,7 @@ begin
         except
           on E: ETandoorError do
           begin
-            WriteLn(StdErr, 'tiecook2: Tandoor error: ', E.Message);
+            WriteLn(StdErr, 'tiecook: Tandoor error: ', E.Message);
             Halt(1);
           end;
         end;
@@ -290,14 +290,14 @@ begin
     try
       Lib.Load;
       if Lib.Count = 0 then
-        WriteLn(StdErr, 'tiecook2: warning: library is empty (', Cfg.LibraryDir, ')');
+        WriteLn(StdErr, 'tiecook: warning: library is empty (', Cfg.LibraryDir, ')');
       try
         n := ExportHtml(Lib, Cfg, outDir);
         WriteLn(Format('Exported %d recipe(s) to %s', [n, outDir]));
       except
         on E: EExportUnsafe do
         begin
-          WriteLn(StdErr, 'tiecook2: ', E.Message);
+          WriteLn(StdErr, 'tiecook: ', E.Message);
           Halt(1);
         end;
       end;
@@ -349,7 +349,7 @@ begin
     end
     else if (Copy(cmd, 1, 2) = '--') then
     begin
-      { options with no command, e.g. `tiecook2 --library DIR`: browse }
+      { options with no command, e.g. `tiecook --library DIR`: browse }
       for i := 1 to ParamCount do Args.Add(ParamStr(i));
       DoBrowse(Args);
     end
@@ -363,7 +363,7 @@ begin
         DoImportTandoor(Args)
       else
       begin
-        WriteLn(StdErr, 'tiecook2: unknown or missing import source');
+        WriteLn(StdErr, 'tiecook: unknown or missing import source');
         Usage; ExitCode := 1;
       end;
     end
@@ -375,7 +375,7 @@ begin
         DoExportHtml(Args)
       else
       begin
-        WriteLn(StdErr, 'tiecook2: unknown or missing export format');
+        WriteLn(StdErr, 'tiecook: unknown or missing export format');
         Usage; ExitCode := 1;
       end;
     end

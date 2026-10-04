@@ -1,6 +1,6 @@
 unit urecipe;
 
-{ The tiecook2 recipe model and its plain-text file format.
+{ The tiecook recipe model and its plain-text file format.
 
   One recipe per file. A file is a header of `key: value` lines, a blank
   line, then any of the `description:`, `ingredients:` and `steps:` body

@@ -515,7 +515,7 @@ begin
         on E: Exception do
         begin
           Inc(Failed);
-          WriteLn(StdErr, 'tiecook2: skip recipe id ', Ov.Id, ': ', E.Message);
+          WriteLn(StdErr, 'tiecook: skip recipe id ', Ov.Id, ': ', E.Message);
         end;
       end;
     end;
