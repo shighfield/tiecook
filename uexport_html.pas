@@ -412,6 +412,33 @@ begin
   end;
 end;
 
+{ Delete files in Dir whose name is not in Keep, so pages and images left over
+  from deleted or renamed recipes don't linger. With Ext set (lowercase, with
+  the dot) only those files are considered; '' means every file. Case-
+  insensitive (TStringList.IndexOf) so it behaves on Windows too. Only ever
+  called on the output directory, which the marker says we own. }
+procedure PruneStale(const Dir: string; Keep: TStrings; const Ext: string);
+var
+  Info: TSearchRec;
+  d: string;
+begin
+  if not DirectoryExists(Dir) then Exit;
+  d := IncludeTrailingPathDelimiter(Dir);
+  if FindFirst(d + '*', faAnyFile, Info) = 0 then
+  begin
+    try
+      repeat
+        if (Info.Attr and faDirectory) = 0 then
+          if (Ext = '') or (LowerCase(ExtractFileExt(Info.Name)) = Ext) then
+            if Keep.IndexOf(Info.Name) < 0 then
+              DeleteFile(d + Info.Name);
+      until FindNext(Info) <> 0;
+    finally
+      FindClose(Info);
+    end;
+  end;
+end;
+
 { --- driver --- }
 
 function ExportHtml(Lib: TLibrary; Cfg: TConfig; const OutDir: string): Integer;
@@ -420,6 +447,7 @@ var
   i: Integer;
   outp, imgdir, markerPath, imgSrc, imgName: string;
   R: TRecipe;
+  keptPages, keptImages: TStringList;
 begin
   { safety: never overwrite a non-empty directory we did not create }
   markerPath := IncludeTrailingPathDelimiter(OutDir) + Marker;
@@ -436,24 +464,43 @@ begin
 
   order := Lib.Search('');   { all recipes, title-sorted }
 
-  for i := 0 to High(order) do
-  begin
-    R := Lib.Recipe(order[i]);
-    imgName := Lib.ImageBasename(order[i]);
-    WriteTextFile(outp + Lib.Slug(order[i]) + '.htm', RecipePage(R, Cfg, imgName));
-    if imgName <> '' then
+  keptPages := TStringList.Create;
+  keptImages := TStringList.Create;
+  try
+    for i := 0 to High(order) do
     begin
-      imgSrc := IncludeTrailingPathDelimiter(Lib.Dir) + imgName;
-      CopyBinary(imgSrc, IncludeTrailingPathDelimiter(imgdir) + imgName);
+      R := Lib.Recipe(order[i]);
+      imgName := Lib.ImageBasename(order[i]);
+      WriteTextFile(outp + Lib.Slug(order[i]) + '.htm', RecipePage(R, Cfg, imgName));
+      keptPages.Add(Lib.Slug(order[i]) + '.htm');
+      if imgName <> '' then
+      begin
+        imgSrc := IncludeTrailingPathDelimiter(Lib.Dir) + imgName;
+        CopyBinary(imgSrc, IncludeTrailingPathDelimiter(imgdir) + imgName);
+        keptImages.Add(imgName);
+      end;
     end;
+
+    if Cfg.HeaderImage <> '' then
+    begin
+      CopyBinary(Cfg.HeaderImage, IncludeTrailingPathDelimiter(imgdir) + ExtractFileName(Cfg.HeaderImage));
+      keptImages.Add(ExtractFileName(Cfg.HeaderImage));
+    end;
+    if Cfg.BackgroundImage <> '' then
+    begin
+      CopyBinary(Cfg.BackgroundImage, IncludeTrailingPathDelimiter(imgdir) + ExtractFileName(Cfg.BackgroundImage));
+      keptImages.Add(ExtractFileName(Cfg.BackgroundImage));
+    end;
+
+    WriteTextFile(outp + 'index.html', IndexPage(Lib, Cfg, order));
+
+    { remove pages and images orphaned by deleted/renamed recipes }
+    PruneStale(OutDir, keptPages, '.htm');
+    PruneStale(imgdir, keptImages, '');
+  finally
+    keptPages.Free;
+    keptImages.Free;
   end;
-
-  if Cfg.HeaderImage <> '' then
-    CopyBinary(Cfg.HeaderImage, IncludeTrailingPathDelimiter(imgdir) + ExtractFileName(Cfg.HeaderImage));
-  if Cfg.BackgroundImage <> '' then
-    CopyBinary(Cfg.BackgroundImage, IncludeTrailingPathDelimiter(imgdir) + ExtractFileName(Cfg.BackgroundImage));
-
-  WriteTextFile(outp + 'index.html', IndexPage(Lib, Cfg, order));
   Result := Length(order);
 end;
 

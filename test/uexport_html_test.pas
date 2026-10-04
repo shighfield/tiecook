@@ -181,12 +181,34 @@ begin
   Lib := TLibrary.Create(libdir);
   try
     Lib.Load;
+    { plant leftovers from a since-deleted/renamed recipe }
+    ms := TMemoryStream.Create;
+    try
+      ms.WriteByte(65);
+      ms.SaveToFile(IncludeTrailingPathDelimiter(outdir) + 'deleted-recipe.htm');
+      ms.SaveToFile(IncludeTrailingPathDelimiter(outdir) + 'images' + PathDelim + 'old-photo.jpg');
+    finally
+      ms.Free;
+    end;
     try
       ExportHtml(Lib, Cfg, outdir);
       Check(True, 're-export into our own site dir is allowed');
     except
       on E: EExportUnsafe do Check(False, 're-export wrongly refused our own dir');
     end;
+    { the re-export prunes stale artifacts but keeps current ones }
+    Check(not FileExists(IncludeTrailingPathDelimiter(outdir) + 'deleted-recipe.htm'),
+          'stale recipe page pruned on re-export');
+    Check(not FileExists(IncludeTrailingPathDelimiter(outdir) + 'images' + PathDelim + 'old-photo.jpg'),
+          'stale image pruned on re-export');
+    Check(FileExists(IncludeTrailingPathDelimiter(outdir) + 'apple-onion-tart.htm'),
+          'current recipe page kept after prune');
+    Check(FileExists(IncludeTrailingPathDelimiter(outdir) + 'images' + PathDelim + 'squash-soup.jpg'),
+          'current image kept after prune');
+    Check(FileExists(IncludeTrailingPathDelimiter(outdir) + 'index.html'),
+          'index.html kept after prune');
+    Check(FileExists(IncludeTrailingPathDelimiter(outdir) + 'style.css'),
+          'style.css kept after prune');
 
     { safety: refuse a non-empty dir we do not own }
     ms := TMemoryStream.Create;
