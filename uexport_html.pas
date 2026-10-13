@@ -57,6 +57,15 @@ begin
   Result := StringReplace(Result, #10, '<br>', [rfReplaceAll]);
 end;
 
+{ A small "made by" credit shown on every page, linking to the project repo.
+  Wrapped in <footer> so the print CSS hides it, like the site footer. }
+function MadeByFooter: string;
+begin
+  Result := '<footer style="text-align:center;margin-top:40px;font-size:0.8em;color:#777;">'
+          + 'Website made by <a href="https://github.com/zead73/tiecook"'
+          + ' target="_blank" rel="noopener">tiecook</a></footer>';
+end;
+
 procedure WriteTextFile(const FileName, Content: string);
 var
   SL: TStringList;
@@ -273,6 +282,7 @@ begin
 
     sb.Add('<div class="print-nav"><button onclick="window.print()">PRINT THIS RECIPE</button></div>');
     sb.Add('<p class="backlink"><a href="index.html">&larr; Main Page</a></p>');
+    sb.Add(MadeByFooter);
     sb.Add('</div></body></html>');
     Result := sb.Text;
   finally
@@ -387,6 +397,7 @@ begin
     if Cfg.SiteFooter <> '' then
       sb.Add('<footer style="text-align:center;margin-top:40px;font-size:0.8em;color:#777;">'
              + EscapeHtml(Cfg.SiteFooter) + '</footer>');
+    sb.Add(MadeByFooter);
     sb.Add('</div>'); { .container }
 
     { live search: show/hide links and their section headings }

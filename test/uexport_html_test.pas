@@ -159,12 +159,18 @@ begin
     Check(Pos('searchRecipes', html) > 0, 'live-search script present');
     Check(Pos('>MINE<', html) > 0, 'personal nav link present');
     Check(Pos('src="images/header.png"', html) > 0, 'header image referenced in index');
+    Check(Pos('Website made by', html) > 0, 'index has the made-by footer');
+    Check(Pos('href="https://github.com/zead73/tiecook"', html) > 0,
+          'index footer links to the project repo');
 
     Check(Pos('images/bg.jpg', ReadFile(IncludeTrailingPathDelimiter(outdir) + 'style.css')) > 0,
           'background image referenced in style.css');
 
     page := ReadFile(IncludeTrailingPathDelimiter(outdir) + 'apple-onion-tart.htm');
     Check(Pos('<h3>Crust</h3>', page) > 0, 'ingredient sub-heading rendered');
+    Check(Pos('Website made by', page) > 0, 'recipe page has the made-by footer');
+    Check(Pos('href="https://github.com/zead73/tiecook"', page) > 0,
+          'recipe-page footer links to the project repo');
     Check(Pos('<li>1 cup flour</li>', page) > 0, 'ingredient list item rendered');
     Check(Pos('PRINT THIS RECIPE', page) > 0, 'print button present');
     Check(Pos('images/squash-soup.jpg', ReadFile(IncludeTrailingPathDelimiter(outdir) + 'squash-soup.htm')) > 0,
