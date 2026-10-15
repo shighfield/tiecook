@@ -160,6 +160,49 @@ begin
     Check(Length(R[0].Steps) = 1, 'one directions paragraph -> one step, attribution dropped');
   end;
 
+  { a hand-typed file: an extra "Source:" header line right after Yield, and
+    ingredient columns shifted by one on most lines. The Source line must not be
+    taken for an ingredient (which also pushed the real ingredients into the
+    directions), and units must survive the shifted columns. }
+  R := ImportMealMasterText(
+    'MMMMM----- Recipe via Meal-Master (tm) v8.05' + CRLF + CRLF +
+    '         Title: Chicken Cacciatore (Electric Skillet)' + CRLF +
+    '    Categories: Italian, Poultry' + CRLF +
+    '        Yield: 4 Servings' + CRLF +
+    '        Source: Fred Peters' + CRLF + CRLF +
+    ' 1 1/2 lb  Chicken breast halves (6), boneless, skinless' + CRLF +
+    '  1/3 c    All-purpose flour' + CRLF +
+    '  1/2 ts   Salt' + CRLF +
+    '  1 lg     Onion, sliced, separated into rings' + CRLF +
+    '  1/2 lb   Fresh mushrooms, sliced' + CRLF +
+    ' 43 1/2 oz Italian tomatoes (3 cans), undrained' + CRLF +
+    '           Cooked spaghetti, hot' + CRLF + CRLF +
+    'Preheat the skillet. Combine flour and salt; dredge chicken.' + CRLF +
+    'Serve over hot cooked spaghetti.' + CRLF + CRLF +
+    'MMMMM' + CRLF);
+  Check(Length(R) = 1, 'shifted-column recipe parses as one recipe');
+  if Length(R) = 1 then
+  begin
+    Check(R[0].Title = 'Chicken Cacciatore (Electric Skillet)', 'shifted-column title');
+    Check(Length(R[0].Ingredients) = 7, 'Source line is not an ingredient; all 7 ingredients kept');
+    Check((Length(R[0].Ingredients) = 7) and
+          (R[0].Ingredients[0].Text = '1 1/2 lb Chicken breast halves (6), boneless, skinless'),
+          'shifted "1 1/2 lb" keeps its full unit');
+    Check((Length(R[0].Ingredients) = 7) and (R[0].Ingredients[1].Text = '1/3 cup All-purpose flour'),
+          'shifted "c" expands to cup');
+    Check((Length(R[0].Ingredients) = 7) and (R[0].Ingredients[2].Text = '1/2 tsp Salt'),
+          'shifted "ts" expands to tsp');
+    Check((Length(R[0].Ingredients) = 7) and (R[0].Ingredients[3].Text = '1 large Onion, sliced, separated into rings'),
+          'shifted "lg" expands to large');
+    Check((Length(R[0].Ingredients) = 7) and (R[0].Ingredients[5].Text = '43 1/2 oz Italian tomatoes (3 cans), undrained'),
+          'a correctly aligned line is unchanged');
+    Check((Length(R[0].Ingredients) = 7) and (R[0].Ingredients[6].Text = 'Cooked spaghetti, hot'),
+          'amount-less ingredient kept as plain text');
+    Check(Length(R[0].Steps) = 1, 'directions are one step, not mixed with ingredients');
+    Check((Length(R[0].Steps) = 1) and (Pos('Preheat the skillet.', R[0].Steps[0]) = 1),
+          'the step is the real method');
+  end;
+
   { slug helper }
   Check(Slugify('Easy Chicken Teriyaki') = 'easy-chicken-teriyaki', 'slugify spaces');
   Check(Slugify('GF Quiche  & Pie Crust!') = 'gf-quiche-pie-crust', 'slugify punctuation');

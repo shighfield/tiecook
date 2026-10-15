@@ -260,11 +260,76 @@ begin
     Result := '';
 end;
 
+{ True for one of Meal-Master's unit codes (the ones ExpandUnit knows). }
+function IsUnitCode(const Raw: string): Boolean;
+begin
+  case LowerCase(Trim(Raw)) of
+    'c', 't', 'ts', 'tb', 'tbl', 'oz', 'fl', 'lb', 'g', 'kg', 'mg', 'ml', 'l',
+    'pt', 'qt', 'ga', 'ds', 'pn', 'dr', 'sm', 'md', 'lg', 'sl', 'cn', 'pk',
+    'pg', 'ct', 'cl', 'bn', 'ea', 'x': Result := True;
+  else
+    Result := False;
+  end;
+end;
+
+{ A token made only of digits and . , / - with at least one digit: 2, 1/2, 0.50, 1-2. }
+function IsAmountToken(const Tok: string): Boolean;
+var
+  c: Char;
+  hasDigit: Boolean;
+begin
+  Result := False;
+  hasDigit := False;
+  for c in Tok do
+    if (c >= '0') and (c <= '9') then hasDigit := True
+    else if not (c in ['.', ',', '/', '-']) then Exit;
+  Result := hasDigit;
+end;
+
+{ Does this line follow Meal-Master's fixed columns (amount 1-7, unit 9-10,
+  name 12+)? Hand-typed files often shift columns by one, so a line only counts
+  as aligned when its amount field is purely numeric (or blank), its unit field
+  is blank or a real unit code, and the gap columns 8 and 11 are blank. }
+function IsColumnAligned(const Line: string): Boolean;
+var
+  amt, u: string;
+  c: Char;
+begin
+  Result := False;
+  if Length(Line) < 12 then Exit;
+  if (Line[8] <> ' ') or (Line[11] <> ' ') then Exit;
+  amt := Trim(Copy(Line, 1, 7));
+  for c in amt do
+    if not ((c >= '0') and (c <= '9')) and not (c in [' ', '.', ',', '/', '-']) then Exit;
+  u := Trim(Copy(Line, 9, 2));
+  Result := (u = '') or IsUnitCode(u);
+end;
+
+{ A generic "Label: value" header line, e.g. "Source: Fred Peters": a short
+  alphabetic label starting with a letter, then a colon (not a URL's "://"). }
+function IsHeaderLine(const Line: string): Boolean;
+var
+  t: string;
+  p, i: Integer;
+begin
+  Result := False;
+  t := Trim(Line);
+  p := Pos(':', t);
+  if (p < 2) or (p > 26) then Exit;
+  if (p < Length(t)) and (t[p + 1] = '/') then Exit;
+  if not (t[1] in ['A'..'Z', 'a'..'z']) then Exit;
+  for i := 1 to p - 1 do
+    if not (t[i] in ['A'..'Z', 'a'..'z', ' ']) then Exit;
+  Result := True;
+end;
+
 function ComposeIngredient(const Line: string): string;
 var
-  amt, unitTxt, name: string;
+  amt, unitTxt, name, rest, tok: string;
+  p: Integer;
 begin
-  if Length(Line) >= 12 then
+  amt := ''; unitTxt := '';
+  if IsColumnAligned(Line) then
   begin
     amt := FormatAmount(Copy(Line, 1, 7));
     unitTxt := ExpandUnit(Copy(Line, 9, 2));
@@ -272,7 +337,30 @@ begin
   end
   else
   begin
-    amt := ''; unitTxt := ''; name := Trim(Line);
+    { columns are off: read it by words - leading amount tokens, then a unit
+      code if one follows, then the name }
+    rest := Trim(Line);
+    while rest <> '' do
+    begin
+      p := Pos(' ', rest);
+      if p = 0 then tok := rest else tok := Copy(rest, 1, p - 1);
+      if not IsAmountToken(tok) then Break;
+      if amt <> '' then amt := amt + ' ';
+      amt := amt + tok;
+      rest := TrimLeft(Copy(rest, Length(tok) + 1, Length(rest)));
+    end;
+    if amt <> '' then
+    begin
+      amt := FormatAmount(amt);
+      p := Pos(' ', rest);
+      if p = 0 then tok := rest else tok := Copy(rest, 1, p - 1);
+      if IsUnitCode(tok) then
+      begin
+        unitTxt := ExpandUnit(tok);
+        rest := TrimLeft(Copy(rest, Length(tok) + 1, Length(rest)));
+      end;
+    end;
+    name := Trim(rest);
   end;
   Result := Trim(amt + ' ' + unitTxt + ' ' + name);
   while Pos('  ', Result) > 0 do
@@ -391,6 +479,13 @@ begin
     else if lbl = 'yield' then Result.Servings := val;
     if lbl <> '' then ingStart := i + 1;
   end;
+
+  { Other "Label: value" lines straight after those headers (Source:, Author:,
+    ...) are header metadata, not ingredients; skip them. Their content has
+    nowhere to live in the recipe format, so it is dropped. }
+  if ingStart > 0 then
+    while (ingStart < Block.Count) and IsHeaderLine(Block[ingStart]) do
+      Inc(ingStart);
 
   { skip blank lines before ingredients }
   i := ingStart;
