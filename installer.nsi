@@ -1,5 +1,5 @@
 !define APPNAME "tiecook"
-!define VERSION "1.0.1"
+!define VERSION "1.0.2"
 
 Name "${APPNAME}"
 OutFile "tiecook-setup.exe"

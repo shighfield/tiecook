@@ -42,6 +42,9 @@ unit urecipe;
 
 interface
 
+uses
+  Classes;
+
 type
   TIngredient = record
     Text: string;       { the line, or the heading text when IsSection }
@@ -82,6 +85,10 @@ procedure MoveIngredient(var R: TRecipe; Index, Delta: Integer);
 procedure InsertStep(var R: TRecipe; Pos: Integer; const Text: string);
 procedure DeleteStep(var R: TRecipe; Index: Integer);
 procedure MoveStep(var R: TRecipe; Index, Delta: Integer);
+{ Split step text typed into an editor into separate steps: every non-blank
+  line becomes its own step (blank lines and surrounding spaces are ignored).
+  Dest is cleared first. }
+procedure SplitStepText(const S: string; Dest: TStrings);
 
 function RecipeToText(const R: TRecipe): string;
 function RecipeFromText(const S: string): TRecipe;
@@ -102,7 +109,7 @@ function StripSourceSection(const S: string; out Url: string): string;
 implementation
 
 uses
-  SysUtils, Classes;
+  SysUtils;
 
 const
   Indent = '  ';
@@ -325,6 +332,24 @@ begin
         SB.Add(ContIndent + Lines[i]);
   finally
     Lines.Free;
+  end;
+end;
+
+procedure SplitStepText(const S: string; Dest: TStrings);
+var
+  lines: TStringList;
+  i: Integer;
+begin
+  Dest.Clear;
+  lines := TStringList.Create;
+  try
+    lines.TextLineBreakStyle := tlbsLF;
+    lines.Text := StringReplace(StringReplace(S, #13#10, LF, [rfReplaceAll]),
+                                #13, LF, [rfReplaceAll]);
+    for i := 0 to lines.Count - 1 do
+      if Trim(lines[i]) <> '' then Dest.Add(Trim(lines[i]));
+  finally
+    lines.Free;
   end;
 end;
 

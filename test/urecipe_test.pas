@@ -6,7 +6,7 @@ program urecipe_test;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, urecipe;
+  SysUtils, Classes, urecipe;
 
 var
   Failures: Integer = 0;
@@ -308,6 +308,39 @@ begin
   Check((Length(R.Steps) = 2) and (R.Steps[0] = 's0'), 'DeleteStep');
 end;
 
+procedure TestSplitStepText;
+var
+  L: TStringList;
+begin
+  L := TStringList.Create;
+  try
+    { every non-blank line is a step; blank lines and padding are ignored }
+    SplitStepText('Melt the butter.' + #10 + '  Add the flour.  ' + #10#10 +
+                  'Stir until smooth.', L);
+    Check(L.Count = 3, 'line breaks (and blank lines) split into 3 steps');
+    Check((L.Count = 3) and (L[0] = 'Melt the butter.'), 'first step');
+    Check((L.Count = 3) and (L[1] = 'Add the flour.'), 'padding trimmed');
+    Check((L.Count = 3) and (L[2] = 'Stir until smooth.'), 'step after a blank line');
+
+    { CRLF input, as an editor on Windows would save it }
+    SplitStepText('One.' + #13#10 + 'Two.' + #13#10, L);
+    Check((L.Count = 2) and (L[1] = 'Two.'), 'CRLF split and trailing break ignored');
+
+    SplitStepText('single line only', L);
+    Check((L.Count = 1) and (L[0] = 'single line only'), 'one line is one step');
+
+    SplitStepText('  ' + #10 + #10, L);
+    Check(L.Count = 0, 'whitespace-only text gives no steps');
+
+    { Dest is cleared first, not appended to }
+    L.Add('stale');
+    SplitStepText('fresh', L);
+    Check((L.Count = 1) and (L[0] = 'fresh'), 'Dest cleared before filling');
+  finally
+    L.Free;
+  end;
+end;
+
 begin
   TestRoundTrip;
   TestParseAuthored;
@@ -316,6 +349,7 @@ begin
   TestCrlfContinuation;
   TestReflow;
   TestEditHelpers;
+  TestSplitStepText;
   TestNormalization;
   TestUtf8;
   TestStripSource;

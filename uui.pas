@@ -203,35 +203,6 @@ begin
   end;
 end;
 
-{ Split edited prose into paragraphs: a blank line starts a new paragraph, and
-  the wrapped lines within a paragraph are rejoined with spaces. Used so that a
-  blank line in the step editor makes a new, separate step. }
-procedure SplitProseParagraphs(const S: string; Dest: TStrings);
-var
-  lines: TStringList;
-  i: Integer;
-  para: string;
-begin
-  Dest.Clear;
-  lines := TStringList.Create;
-  try
-    lines.TextLineBreakStyle := tlbsLF;
-    lines.Text := StringReplace(StringReplace(S, #13#10, #10, [rfReplaceAll]),
-                                #13, #10, [rfReplaceAll]);
-    para := '';
-    for i := 0 to lines.Count - 1 do
-      if Trim(lines[i]) = '' then
-      begin
-        if para <> '' then begin Dest.Add(para); para := ''; end;
-      end
-      else if para = '' then para := Trim(lines[i])
-      else para := para + ' ' + Trim(lines[i]);
-    if para <> '' then Dest.Add(para);
-  finally
-    lines.Free;
-  end;
-end;
-
 { --- TBrowser --- }
 
 constructor TBrowser.Create(Lib: TLibrary; Cfg: TConfig);
@@ -831,7 +802,7 @@ var
 begin
   parts := TStringList.Create;
   try
-    SplitProseParagraphs(S, parts);
+    SplitStepText(S, parts);
     if parts.Count = 0 then Exit;
     FEdit.Steps[Idx] := parts[0];
     for i := 1 to parts.Count - 1 do
@@ -850,7 +821,7 @@ var
 begin
   parts := TStringList.Create;
   try
-    SplitProseParagraphs(S, parts);
+    SplitStepText(S, parts);
     for i := 0 to parts.Count - 1 do
       InsertStep(FEdit, Idx + 1 + i, parts[i]);
     BuildEditRows;

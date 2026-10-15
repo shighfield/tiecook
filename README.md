@@ -57,7 +57,7 @@ value from the config file is used.
 `import mealmaster` reads Meal-Master `.mmf` files (a single file may hold
 many recipes) and writes one plain-text file per recipe into the library.
 Amounts become fractions (`0.50` → `1/2`), unit codes expand (`ts` → `tsp`),
-categories become keywords, and the directions become numbered steps. Trailing
+categories become keywords, and the directions become numbered steps. Meal-Master directions are hard-wrapped, so lines that follow each other are joined into one step; put a **blank line** between steps to keep them separate. Extra header lines such as `Source:` are ignored, and ingredient lines whose columns are off (common in hand-typed files) are still read correctly. Trailing
 attribution lines (`Recipe by …`, `Recipe FROM: <url>`, `Source: …`) are
 dropped from the steps, and any source URL is captured as the recipe's source
 link. Re-importing the same source updates the existing file instead of
@@ -117,9 +117,9 @@ cancels** (discarding changes). Click a row to select it, click it again to
 edit it, and the wheel scrolls. Longer prose — a step's text or the
 description — opens in your editor (config `[editor] command`, else `$VISUAL` /
 `$EDITOR` / `nano` / `notepad`) on just that text. When you edit (or add) a
-step, **separating the text with a blank line splits it into several numbered
-steps** — one per paragraph — so you can break a wall of text into steps right
-in your editor. Step numbers are generated automatically for display; you never
+step, **each line you type becomes its own numbered step**, so you can break a
+wall of text into steps right in your editor just by pressing Enter between
+them. Step numbers are generated automatically for display; you never
 type them. The recipe is always written in a clean canonical layout; in the
 description, wrapped lines flow together and a blank line makes a paragraph
 break.
